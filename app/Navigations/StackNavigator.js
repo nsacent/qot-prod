@@ -1,11 +1,15 @@
 import React from "react";
-import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
+import {
+  createStackNavigator,
+  CardStyleInterpolators,
+} from "@react-navigation/stack";
 import { Platform, StatusBar, View } from "react-native";
 import { useTheme } from "@react-navigation/native";
 
 import DrawerNavigation from "./DrawerNavigation";
 import SignUp from "../Screens/Auth/SignUp";
 import SignIn from "../Screens/Auth/SignIn";
+import ForgotPassword from "../Screens/Auth/ForgotPassword";
 import Categories from "../Screens/Categories/Categories";
 import CarHome from "../Screens/Item/CarHome";
 import Items from "../Screens/Item/Items";
@@ -56,30 +60,40 @@ import Anotherprofile from "../Screens/profile/Anotherprofile";
 import Selllist from "../Screens/sell/Selllist/Selllist";
 import Form from "../Screens/sell/Sellfrom/Form";
 
-
 const StackComponent = createStackNavigator();
 
 const StackNavigator = () => {
-
   const theme = useTheme();
 
   return (
-    <View style={{width:'100%', flex: 1 }}>
-      {Platform.OS === 'web' || Platform.OS === 'android' &&
-        <StatusBar backgroundColor={theme.colors.card} barStyle={theme.dark ? "dark-content" : "dark-content"} />
-      }
+    <View style={{ width: "100%", flex: 1 }}>
+      {Platform.OS === "web" ||
+        (Platform.OS === "android" && (
+          <StatusBar
+            backgroundColor={theme.colors.card}
+            barStyle={theme.dark ? "dark-content" : "dark-content"}
+          />
+        ))}
       <StackComponent.Navigator
         initialRouteName={"SignIn"}
         detachInactiveScreens={true}
         screenOptions={{
           headerShown: false,
-          cardStyle: { backgroundColor: "transparent",flex:1 },
+          cardStyle: { backgroundColor: "transparent", flex: 1 },
           cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
         }}
       >
         <StackComponent.Screen name={"SignIn"} component={SignIn} />
         <StackComponent.Screen name={"SignUp"} component={SignUp} />
-        <StackComponent.Screen name={"DrawerNavigation"} component={DrawerNavigation} />
+        <StackComponent.Screen
+          name={"ForgotPassword"}
+          component={ForgotPassword}
+        />
+
+        <StackComponent.Screen
+          name={"DrawerNavigation"}
+          component={DrawerNavigation}
+        />
         <StackComponent.Screen name={"Categories"} component={Categories} />
         <StackComponent.Screen name={"CarHome"} component={CarHome} />
         <StackComponent.Screen name={"Items"} component={Items} />
@@ -91,7 +105,10 @@ const StackNavigator = () => {
         <StackComponent.Screen name={"Buttons"} component={Buttons} />
         <StackComponent.Screen name={"Charts"} component={Charts} />
         <StackComponent.Screen name={"Badges"} component={Badges} />
-        <StackComponent.Screen name={"DividerElements"} component={DividerElements} />
+        <StackComponent.Screen
+          name={"DividerElements"}
+          component={DividerElements}
+        />
         <StackComponent.Screen name={"Inputs"} component={Inputs} />
         <StackComponent.Screen name={"Headers"} component={Headers} />
         <StackComponent.Screen name={"Footers"} component={Footers} />
@@ -113,25 +130,37 @@ const StackNavigator = () => {
         <StackComponent.Screen name={"Location"} component={Location} />
         <StackComponent.Screen name={"Uploadphoto"} component={Uploadphoto} />
         <StackComponent.Screen name={"Setprice"} component={Setprice} />
-        <StackComponent.Screen name={"Comfirmlocation"} component={Comfirmlocation} />
+        <StackComponent.Screen
+          name={"Comfirmlocation"}
+          component={Comfirmlocation}
+        />
         <StackComponent.Screen name={"Review"} component={Review} />
-        <StackComponent.Screen name={"FollowerFollowing"} component={FollowerFollowing} />
+        <StackComponent.Screen
+          name={"FollowerFollowing"}
+          component={FollowerFollowing}
+        />
         <StackComponent.Screen name={"Editprofile"} component={Editprofile} />
         <StackComponent.Screen name={"Setting"} component={Setting} />
         <StackComponent.Screen name={"Notification"} component={Notification} />
         <StackComponent.Screen name={"Privacy"} component={Privacy} />
-        <StackComponent.Screen name={"Changepassword"} component={Changepassword} />
+        <StackComponent.Screen
+          name={"Changepassword"}
+          component={Changepassword}
+        />
         <StackComponent.Screen name={"BuyPackages"} component={BuyPackages} />
         <StackComponent.Screen name={"Myorders"} component={Myorders} />
         <StackComponent.Screen name={"Language"} component={Language} />
         <StackComponent.Screen name={"Help"} component={Help} />
-        <StackComponent.Screen name={"Billinginformation"} component={Billinginformation} />
-        <StackComponent.Screen name={"Anotherprofile"} component={Anotherprofile} />
+        <StackComponent.Screen
+          name={"Billinginformation"}
+          component={Billinginformation}
+        />
+        <StackComponent.Screen
+          name={"Anotherprofile"}
+          component={Anotherprofile}
+        />
         <StackComponent.Screen name={"Selllist"} component={Selllist} />
         <StackComponent.Screen name={"Form"} component={Form} />
-
-
-
       </StackComponent.Navigator>
     </View>
   );
