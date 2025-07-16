@@ -1,20 +1,32 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import "react-native-gesture-handler";
+import React, { Component } from "react";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { useFonts } from "expo-font";
+import Routes from "./app/Navigations/Route";
 
-export default function App() {
+const App = () => {
+  const [loaded] = useFonts({
+    PoppinsRegular: require("./app/assets/fonts/Poppins-Regular.ttf"),
+    PoppinsSemiBold: require("./app/assets/fonts/Poppins-SemiBold.ttf"),
+    PoppinsMedium: require("./app/assets/fonts/Poppins-Medium.ttf"),
+    PoppinsBold: require("./app/assets/fonts/Poppins-Bold.ttf"),
+  });
+
+  if (!loaded) {
+    return null;
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <SafeAreaView
+        style={{
+          flex: 1,
+        }}
+      >
+        <Routes />
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+export default App;

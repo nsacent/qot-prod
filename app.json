@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "classifind",
+    "name": "ClassiFind",
     "slug": "classifind",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,10 +20,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.deepeshgour.classifind"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "fec4bdbe-aba0-4c0a-8781-d0c64b6ab462"
+      }
     }
   }
 }
