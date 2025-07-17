@@ -3,6 +3,7 @@ import React, { Component } from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import Routes from "./app/Navigations/Route";
+import AuthProvider from "./app/context/services/AuthProvider";
 
 const App = () => {
   const [loaded] = useFonts({
@@ -17,15 +18,17 @@ const App = () => {
   }
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView
-        style={{
-          flex: 1,
-        }}
-      >
-        <Routes />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <AuthProvider>
+      <SafeAreaProvider>
+        <SafeAreaView
+          style={{
+            flex: 1,
+          }}
+        >
+          <Routes />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </AuthProvider>
   );
 };
 

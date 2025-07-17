@@ -187,14 +187,16 @@ const Myads = ({ navigation }) => {
   const moresheet = React.useRef();
 
   return (
-    <SafeAreaView
-      style={{ backgroundColor: colors.card, flex: 1, paddingBottom: 80 }}
-    >
+    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
       <Header title="My Ads" leftIcon={"back"} titleLeft />
       <View
         style={[
           GlobalStyleSheet.container,
-          { paddingTop: 10, paddingHorizontal: 10, padding: 0 },
+          {
+            paddingTop: 10,
+            paddingHorizontal: 10,
+            padding: 0,
+          },
         ]}
       >
         <View style={{ flexDirection: "row", marginTop: 0, marginBottom: 0 }}>
@@ -240,7 +242,7 @@ const Myads = ({ navigation }) => {
       <View
         style={[
           Platform.OS === "web" && GlobalStyleSheet.container,
-          { padding: 0 },
+          { padding: 0, paddingBottom: 80 },
         ]}
       >
         <ScrollView
