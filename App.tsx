@@ -3,7 +3,7 @@ import React, { Component } from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import Routes from "./app/Navigations/Route";
-import AuthProvider from "./app/context/services/AuthProvider";
+import AuthProvider from "./app/context/AuthProvider";
 
 const App = () => {
   const [loaded] = useFonts({

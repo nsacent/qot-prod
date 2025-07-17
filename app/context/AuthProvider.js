@@ -1,9 +1,8 @@
 import React, { createContext, useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { STORAGE_KEYS } from "../../src/config/api";
 import PropTypes from "prop-types";
-import api from "../../../src/services/api";
-
-import { STORAGE_KEYS } from "../../../src/config/api";
+import api from "../../src/services/api";
 
 export const AuthContext = createContext();
 
