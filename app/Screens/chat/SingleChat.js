@@ -301,7 +301,7 @@ const SingleChat = ({ navigation }) => {
           paddingHorizontal: 10,
           borderTopWidth: 1,
           borderTopColor: colors.borderColor,
-          marginBottom: keyboardHeight, // 👈 ADD THIS LINE
+          marginBottom: keyboardHeight, // 👈 ADD TH/IS LINE
         }}
       >
         <View>
