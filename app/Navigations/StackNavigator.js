@@ -10,7 +10,6 @@ import { AuthContext } from "../context/AuthProvider";
 // Auth Screens
 import SignUp from "../Screens/Auth/SignUp";
 import SignIn from "../Screens/Auth/SignIn";
-import ForgotPassword from "../Screens/Auth/ForgotPassword";
 
 // Main App Screens
 import DrawerNavigation from "./DrawerNavigation";
@@ -182,10 +181,6 @@ const StackNavigator = () => {
           <>
             <StackComponent.Screen name="SignIn" component={SignIn} />
             <StackComponent.Screen name="SignUp" component={SignUp} />
-            <StackComponent.Screen
-              name="ForgotPassword"
-              component={ForgotPassword}
-            />
           </>
         )}
       </StackComponent.Navigator>

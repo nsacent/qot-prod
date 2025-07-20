@@ -1,5 +1,5 @@
 import "react-native-gesture-handler";
-import React, { Component } from "react";
+import React from "react";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import Routes from "./app/Navigations/Route";

@@ -25,11 +25,16 @@ export const API_ENDPOINTS = {
     REGISTER: "/users",
     LOGOUT: "/auth/logout",
     REFRESH_TOKEN: "/auth/refresh",
+    FORGOT_PASSWORD: "/auth/password/forgot", // Endpoint for forgot password
+    RESET_PASSWORD: "/auth/password/reset", // Endpoint for reset password
+    VERIFY: "/auth/verify/:entity/:field/:token?",
   },
   USER: {
-    PROFILE: "/user/profile",
-    UPDATE: "/user/update",
-    AVATAR: "/user/avatar",
+    PROFILE: "/users/profile",
+    UPDATE: "/users/update",
+    AVATAR: "/users/avatar",
+    BY_ID: "/users/:id",
+    STATS: "/users/:id/stats",
   },
 
   POSTS_TYPES: {
@@ -47,6 +52,10 @@ export const API_ENDPOINTS = {
     GET_ALL: "/posts",
     SEARCH: "/posts/search",
     BY_ID: "/posts/:id",
+  },
+
+  SETTINGS: {
+    UPDATE: "/users/:id/preferences",
   },
 
   CATEGORIES: {

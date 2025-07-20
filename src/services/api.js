@@ -3,9 +3,9 @@
  * Handles all network requests with centralized error handling
  */
 
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { navigate } from '../navigation/navigationRef'; // adjust this path based on your folder structure
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { navigate } from "../navigation/navigationRef"; // adjust this path based on your folder structure
 
 import {
   API_BASE_URL,
@@ -14,8 +14,7 @@ import {
   API_ENDPOINTS,
   STORAGE_KEYS,
   API_ERRORS,
-} from '../config/api';
-import { navigationRef } from '../navigation/navigationRef';
+} from "../config/api";
 
 // Create Axios instance
 const api = axios.create({
@@ -23,6 +22,14 @@ const api = axios.create({
   timeout: API_TIMEOUT,
   headers: DEFAULT_HEADERS,
 });
+
+const replaceParams = (path, params) => {
+  let result = path;
+  Object.entries(params).forEach(([key, value]) => {
+    result = result.replace(`:${key}`, value);
+  });
+  return result;
+};
 
 // Request Interceptor
 api.interceptors.request.use(
@@ -35,7 +42,7 @@ api.interceptors.request.use(
 
     // Log request in development
     if (__DEV__) {
-      console.log('API Request:', {
+      console.log("API Request:", {
         url: config.url,
         method: config.method,
         headers: config.headers,
@@ -55,7 +62,7 @@ api.interceptors.response.use(
   (response) => {
     // Log response in development
     if (__DEV__) {
-      console.log('API Response:', {
+      console.log("API Response:", {
         url: response.config.url,
         status: response.status,
         data: response.data,
@@ -66,7 +73,7 @@ api.interceptors.response.use(
   async (error) => {
     // Handle errors
     if (__DEV__) {
-      console.error('API Error:', error);
+      console.error("API Error:", error);
     }
 
     const originalRequest = error.config;
@@ -78,7 +85,7 @@ api.interceptors.response.use(
     }
 
     // Timeout Errors
-    if (error.code === 'ECONNABORTED') {
+    if (error.code === "ECONNABORTED") {
       error.message = API_ERRORS.TIMEOUT;
       return Promise.reject(error);
     }
@@ -89,7 +96,9 @@ api.interceptors.response.use(
 
       try {
         // Attempt token refresh
-        const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+        const refreshToken = await AsyncStorage.getItem(
+          STORAGE_KEYS.REFRESH_TOKEN
+        );
         const response = await axios.post(
           `${API_BASE_URL}${API_ENDPOINTS.AUTH.REFRESH_TOKEN}`,
           { refresh_token: refreshToken }
@@ -111,13 +120,12 @@ api.interceptors.response.use(
           STORAGE_KEYS.REFRESH_TOKEN,
           STORAGE_KEYS.USER_DATA,
         ]);
-        
+
         // You might want to navigate to login screen here
         // navigationRef.navigate('Auth');
 
-        navigate('SignIn'); // ✅ Go to login screen
+        navigate("SignIn"); // ✅ Go to login screen
 
-        
         error.message = API_ERRORS.UNAUTHORIZED;
         return Promise.reject(error);
       }
@@ -135,22 +143,37 @@ export const ApiService = {
   login: (credentials) => api.post(API_ENDPOINTS.AUTH.LOGIN, credentials),
   register: (userData) => api.post(API_ENDPOINTS.AUTH.REGISTER, userData),
   logout: () => api.post(API_ENDPOINTS.AUTH.LOGOUT),
+  forgot: (credentials) =>
+    api.post(API_ENDPOINTS.AUTH.FORGOT_PASSWORD, credentials),
+  reset: (token_forgot, email) =>
+    api.post(API_ENDPOINTS.AUTH.RESET_PASSWORD, { token_forgot, email }),
+  verify: (entity, field, token) =>
+    api.get(replaceParams(API_ENDPOINTS.AUTH.VERIFY, { entity, field, token })),
 
   // User
   getProfile: () => api.get(API_ENDPOINTS.USER.PROFILE),
   updateProfile: (data) => api.put(API_ENDPOINTS.USER.UPDATE, data),
   uploadAvatar: (imageData) => {
     const formData = new FormData();
-    formData.append('avatar', imageData);
+    formData.append("avatar", imageData);
     return api.post(API_ENDPOINTS.USER.AVATAR, formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        "Content-Type": "multipart/form-data",
       },
     });
   },
+  getUser: (id) => api.get(replaceParams(API_ENDPOINTS.USER.BY_ID, { id })),
+  userStats: (id) => api.get(replaceParams(API_ENDPOINTS.USER.STATS, { id })),
 
   // Categories
-  getCategories: (params) => api.get(API_ENDPOINTS.CATEGORIES.GET_ALL, {params} ),
+  getCategories: (params) =>
+    api.get(API_ENDPOINTS.CATEGORIES.GET_ALL, { params }),
+
+  // Settings/Notifications
+  getNotificationSettings: () => api.get(API_ENDPOINTS.SETTINGS.NOTIFICATIONS),
+
+  updateNotificationSettings: (id, data) =>
+    api.put(replaceParams(API_ENDPOINTS.SETTINGS.UPDATE, { id }), data),
 };
 
 export default api;

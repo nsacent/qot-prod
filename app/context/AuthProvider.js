@@ -2,8 +2,8 @@ import React, { createContext, useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { STORAGE_KEYS } from "../../src/config/api";
 import PropTypes from "prop-types";
-import api from "../../src/services/api";
-
+import api, { ApiService } from "../../src/services/api";
+import axios from "axios";
 export const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
@@ -25,17 +25,34 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  // Load auth state from AsyncStorage
+
+  const validateSession = async (storedToken, userId) => {
+    if (!storedToken) return false;
+    try {
+      const response = await ApiService.userStats(userId);
+      if (response.data?.success) return true;
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        await AsyncStorage.removeItem("token");
+        console.log("🔐 Token expired. Logging out.");
+        await signOut();
+        return false;
+      }
+      return false;
+    }
+  };
+
   const loadAuthState = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
       const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER_DATA);
       const parsedUser = storedUser ? JSON.parse(storedUser) : null;
 
-      if (!token || !parsedUser?.id) return await signOut();
+      if (!token || !parsedUser?.id || !validateSession(token, parsedUser.id))
+        return await signOut();
 
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      const res = await api.get(`/users/${parsedUser.id}`);
+      const res = await ApiService.getUser(parsedUser.id);
 
       if (res.status === 200 && res.data?.result) {
         const freshUser = res.data.result;
@@ -46,12 +63,13 @@ const AuthProvider = ({ children }) => {
           JSON.stringify(freshUser)
         );
       } else {
-        console.warn("⚠️ Invalid token or user. Logging out.");
-        await signOut();
+        console.warn("⚠️ Invalid token or user. Logging out...");
+        return await signOut();
       }
     } catch (error) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         console.warn("🔐 Token unauthorized. Logging out.");
+        signOut();
       } else {
         console.error("🔐 Auth load error:", error.message);
       }

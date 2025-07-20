@@ -7,14 +7,13 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import Header from "../../layout/Header";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import { IMAGES, FONTS, COLORS } from "../../constants/theme";
-import { Modal } from "react-native-paper";
-import FeatherIcon from "react-native-vector-icons/Feather";
-import CustomButton from "../../components/CustomButton"; // Make sure this exists
 import { AuthContext } from "../../context/AuthProvider";
+import ConfirmModal from "../../components/Modal/ConfirmModal";
 
 const SettingData = [
   {
@@ -23,30 +22,15 @@ const SettingData = [
     title: "Notification",
     navigate: "Notification",
   },
-  {
-    id: "2",
-    image: IMAGES.verified,
-    title: "Privacy",
-    navigate: "Privacy",
-  },
+  { id: "2", image: IMAGES.verified, title: "Privacy", navigate: "Privacy" },
   {
     id: "3",
     image: IMAGES.earth,
     title: "Select Language",
     navigate: "Language",
   },
-  {
-    id: "4",
-    image: IMAGES.help,
-    title: "Help & Support",
-    navigate: "Help",
-  },
-  {
-    id: "5",
-    image: IMAGES.logout,
-    title: "Logout",
-    navigate: null, // We'll handle manually
-  },
+  { id: "4", image: IMAGES.help, title: "Help & Support", navigate: "Help" },
+  { id: "5", image: IMAGES.logout, title: "Logout", navigate: null },
 ];
 
 const Setting = ({ navigation }) => {
@@ -69,30 +53,34 @@ const Setting = ({ navigation }) => {
     try {
       await signOut();
       setShowLogoutModal(false);
-    } catch (error) {
-      console.error("Logout error:", error);
+    } catch (err) {
+      console.error("Logout error:", err);
     } finally {
       setIsLoggingOut(false);
     }
   };
 
   return (
-    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-      <Header title="Setting" leftIcon={"back"} titleLeft />
-      <View style={[GlobalStyleSheet.container, { marginTop: 10 }]}>
-        {SettingData.map((data, index) => (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
+      <Header title="Settings" leftIcon="back" titleLeft />
+      <ScrollView
+        contentContainerStyle={[
+          GlobalStyleSheet.container,
+          { paddingVertical: 10 },
+        ]}
+      >
+        {SettingData.map((item) => (
           <TouchableOpacity
-            key={index}
+            key={item.id}
             style={{
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
               borderBottomWidth: 1,
               borderBottomColor: colors.border,
-              paddingBottom: 10,
-              marginBottom: 20,
+              paddingVertical: 12,
             }}
-            onPress={() => handleItemPress(data)}
+            onPress={() => handleItemPress(item)}
           >
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Image
@@ -101,9 +89,9 @@ const Setting = ({ navigation }) => {
                   height: 22,
                   resizeMode: "contain",
                   tintColor:
-                    data.title === "Logout" ? COLORS.danger : colors.title,
+                    item.title === "Logout" ? COLORS.danger : colors.title,
                 }}
-                source={data.image}
+                source={item.image}
               />
               <View style={{ marginLeft: 10 }}>
                 <Text
@@ -112,121 +100,45 @@ const Setting = ({ navigation }) => {
                     ...FONTS.fontMedium,
                     fontSize: 15,
                     color:
-                      data.title === "Logout" ? COLORS.danger : colors.title,
+                      item.title === "Logout" ? COLORS.danger : colors.title,
                   }}
                 >
-                  {data.title}
+                  {item.title}
                 </Text>
               </View>
             </View>
-            <View>
-              {data.title === "Logout" && isLoggingOut ? (
-                <ActivityIndicator size="small" color={COLORS.danger} />
-              ) : (
-                <Image
-                  style={{
-                    height: 15,
-                    width: 15,
-                    resizeMode: "contain",
-                    tintColor: colors.title,
-                  }}
-                  source={IMAGES.rightarrow}
-                />
-              )}
-            </View>
+            {item.title === "Logout" && isLoggingOut ? (
+              <ActivityIndicator size="small" color={COLORS.danger} />
+            ) : (
+              <Image
+                source={IMAGES.rightarrow}
+                style={{ width: 15, height: 15, tintColor: colors.title }}
+              />
+            )}
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
-      {/* Logout Confirmation Modal */}
-      <Modal
+      {/* ConfirmModal sits at the top level */}
+      <ConfirmModal
         visible={showLogoutModal}
-        onDismiss={() => setShowLogoutModal(false)}
-        contentContainerStyle={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.5)",
-          justifyContent: "center",
-          alignItems: "center",
+        onRequestClose={() => setShowLogoutModal(false)}
+        iconName="log-out-outline"
+        iconColor={COLORS.warning}
+        iconSize={65}
+        title="Confirm Logout"
+        message="Are you sure you want to sign out?"
+        confirmText={isLoggingOut ? "Signing out..." : "Yes, Sign Out"}
+        cancelText="Cancel"
+        onConfirm={handleConfirmLogout}
+        onCancel={() => setShowLogoutModal(false)}
+        confirmButtonProps={{ disabled: isLoggingOut, color: COLORS.danger }}
+        cancelButtonProps={{
+          disabled: isLoggingOut,
+          outline: true,
+          color: COLORS.primary,
         }}
-      >
-        <View
-          style={{
-            backgroundColor: colors.card,
-            padding: 20,
-            marginHorizontal: 20,
-            borderRadius: 8,
-            width: "90%",
-            maxWidth: 400,
-            alignItems: "center",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 4,
-            elevation: 5,
-          }}
-        >
-          <View
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: 15,
-              marginTop: 10,
-            }}
-          >
-            <View
-              style={{
-                height: 80,
-                width: 80,
-                opacity: 0.2,
-                backgroundColor: COLORS.warning,
-                borderRadius: 80,
-              }}
-            />
-            <View
-              style={{
-                height: 65,
-                width: 65,
-                backgroundColor: COLORS.warning,
-                borderRadius: 65,
-                position: "absolute",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <FeatherIcon size={32} color={COLORS.white} name="log-out" />
-            </View>
-          </View>
-
-          <Text style={{ ...FONTS.h4, color: colors.title, marginBottom: 8 }}>
-            Confirm Logout
-          </Text>
-          <Text
-            style={{
-              ...FONTS.font,
-              color: colors.text,
-              textAlign: "center",
-              marginBottom: 20,
-            }}
-          >
-            Are you sure you want to sign out?
-          </Text>
-
-          <CustomButton
-            onPress={handleConfirmLogout}
-            title={isLoggingOut ? "Signing out..." : "Yes, Sign Out"}
-            color={COLORS.danger}
-            style={{ width: "100%", marginBottom: 10 }}
-            disabled={isLoggingOut}
-          />
-          <CustomButton
-            onPress={() => setShowLogoutModal(false)}
-            title="Cancel"
-            color={COLORS.primary}
-            style={{ width: "100%" }}
-            disabled={isLoggingOut}
-          />
-        </View>
-      </Modal>
+      />
     </SafeAreaView>
   );
 };
