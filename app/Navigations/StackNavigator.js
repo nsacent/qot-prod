@@ -73,7 +73,7 @@ import Language from "../Screens/setting/language/Language";
 import Help from "../Screens/setting/Help/Help";
 import Billinginformation from "../Screens/setting/buypackages/Billinginformation";
 import Profile from "../Screens/profile/Profile";
-import EditProfile from "../Screens/profile/Editprofile";
+import Editprofile from "../Screens/profile/Editprofile";
 
 const StackComponent = createStackNavigator();
 
@@ -145,7 +145,7 @@ const StackNavigator = () => {
               name="FollowerFollowing"
               component={FollowerFollowing}
             />
-            <StackComponent.Screen name="EditProfile" component={EditProfile} />
+            <StackComponent.Screen name="Editprofile" component={Editprofile} />
             <StackComponent.Screen
               name="Anotherprofile"
               component={Anotherprofile}

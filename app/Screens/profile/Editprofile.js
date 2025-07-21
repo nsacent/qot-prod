@@ -7,7 +7,7 @@ import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import { SIZES, FONTS, IMAGES, COLORS } from "../../constants/theme";
 import Button from "../../components/Button/Button";
 
-const EditProfile = ({ navigation }) => {
+const Editprofile = ({ navigation }) => {
   const theme = useTheme();
   const { colors } = theme;
 
@@ -136,4 +136,4 @@ const EditProfile = ({ navigation }) => {
   );
 };
 
-export default EditProfile;
+export default Editprofile;
