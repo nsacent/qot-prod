@@ -1,4 +1,4 @@
-/*import React, { useContext, useRef, useState, useEffect } from "react";
+import React, { useContext, useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -62,12 +62,12 @@ const Profile = ({ navigation }) => {
 
       // Fetch both pending and archived ads in parallel
       const [pendingResponse, archivedResponse] = await Promise.all([
-        postApiService.posts.getPendingApproval("belongLoggedUser=1"),
-        postApiService.posts.getArchived(),
+        postApiService.posts.getPendingApproval({ pendingApproval: 1 }),
+        postApiService.posts.getArchived({ archived: 1 }),
       ]);
 
-      setPendingAds(pendingResponse.result?.data || []);
-      setArchivedAds(archivedResponse.result?.data || []);
+      setPendingAds(pendingResponse.data?.result?.data || []);
+      setArchivedAds(archivedResponse.data?.result?.data || []);
     } catch (err) {
       console.error("Error fetching ads:", err);
       setError(err.message);
@@ -158,9 +158,8 @@ const Profile = ({ navigation }) => {
         <View
           style={{
             flexDirection: "row",
-            borderBottomWidth: isPending ? 1 : 0,
             borderBottomColor: colors.border,
-            paddingBottom: isPending ? 10 : 0,
+            paddingBottom: 0,
           }}
         >
           <Image
@@ -190,107 +189,93 @@ const Profile = ({ navigation }) => {
               {data.price_formatted || "Price not set"}
             </Text>
 
-            {isPending ? (
-              <View
+            <View
+              style={{
+                backgroundColor: COLORS.primary,
+                width: 100,
+                borderRadius: 20,
+                alignItems: "center",
+                padding: 2,
+                marginTop: 5,
+              }}
+            >
+              <Text
                 style={{
-                  backgroundColor: COLORS.primary,
-                  width: 100,
-                  borderRadius: 20,
-                  alignItems: "center",
-                  padding: 2,
-                  marginTop: 5,
+                  ...FONTS.fontSm,
+                  color: colors.card,
+                  paddingHorizontal: 5,
                 }}
               >
-                <Text style={{ ...FONTS.fontSm, color: colors.card }}>
-                  {data.archived_at ? "ARCHIVED" : "PENDING"}
-                </Text>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", marginTop: 5 }}>
-                <FeatherIcon size={12} color={colors.text} name={"map-pin"} />
-                <Text
-                  style={[
-                    FONTS.fontXs,
-                    { fontSize: 11, color: colors.text, marginLeft: 4 },
-                  ]}
-                >
-                  {data.city_id
-                    ? `City ID: ${data.city_id}`
-                    : "Location not specified"}
-                </Text>
-              </View>
-            )}
+                {data.archived_at ? "ARCHIVED" : "PENDING"}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {isPending && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingTop: 10,
-              paddingBottom: 0,
-            }}
-          >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingTop: 10,
+            paddingBottom: 0,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 15 }}>
             <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 15 }}
-            >
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
-              >
-                <Image
-                  style={{
-                    width: 15,
-                    height: 15,
-                    resizeMode: "contain",
-                    tintColor: colors.text,
-                  }}
-                  source={IMAGES.eye}
-                />
-                <Text style={{ ...FONTS.fontXs, color: colors.text }}>
-                  Views:
-                </Text>
-                <Text style={{ ...FONTS.fontXs, color: colors.title }}>
-                  {data.visits || 0}
-                </Text>
-              </View>
-              <View
-                style={{
-                  height: 15,
-                  width: 1,
-                  backgroundColor: colors.borderColor,
-                }}
-              ></View>
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
-              >
-                <Image
-                  style={{ width: 15, height: 15, resizeMode: "contain" }}
-                  source={IMAGES.like}
-                />
-                <Text style={{ ...FONTS.fontXs, color: colors.text }}>
-                  Likes:
-                </Text>
-                <Text style={{ ...FONTS.fontXs, color: colors.title }}>
-                  {data.likes || 0}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              onPress={() => moresheet.current.openSheet(data)}
-              style={[
-                GlobalStyleSheet.background,
-                { marginRight: 5, height: 40, width: 40 },
-              ]}
+              style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
             >
               <Image
-                style={{ height: 20, width: 20, tintColor: colors.title }}
-                source={IMAGES.more}
+                style={{
+                  width: 15,
+                  height: 15,
+                  resizeMode: "contain",
+                  tintColor: colors.text,
+                }}
+                source={IMAGES.eye}
               />
-            </TouchableOpacity>
+              <Text style={{ ...FONTS.fontXs, color: colors.text }}>
+                Views:
+              </Text>
+              <Text style={{ ...FONTS.fontXs, color: colors.title }}>
+                {data.visits || 0}
+              </Text>
+            </View>
+            <View
+              style={{
+                height: 15,
+                width: 1,
+                backgroundColor: colors.borderColor,
+              }}
+            ></View>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+            >
+              <Image
+                style={{ width: 15, height: 15, resizeMode: "contain" }}
+                source={IMAGES.like}
+              />
+              <Text style={{ ...FONTS.fontXs, color: colors.text }}>
+                Likes:
+              </Text>
+              <Text style={{ ...FONTS.fontXs, color: colors.title }}>
+                {data.likes || 0}
+              </Text>
+            </View>
           </View>
-        )}
+          <TouchableOpacity
+            onPress={() => moresheet.current.openSheet(data)}
+            style={[
+              GlobalStyleSheet.background,
+              { marginRight: 5, height: 40, width: 40 },
+            ]}
+          >
+            <Image
+              style={{ height: 20, width: 20, tintColor: colors.title }}
+              source={IMAGES.more}
+            />
+          </TouchableOpacity>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -731,142 +716,6 @@ const Profile = ({ navigation }) => {
         onDelete={handleDeleteAd}
       />
     </>
-  );
-};
-
-export default Profile;*/
-import React, { useContext, useEffect, useState, Suspense } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-} from "react-native";
-import { useTheme } from "@react-navigation/native";
-import { AuthContext } from "../../context/AuthProvider";
-import { GlobalStyleSheet } from "../../constants/StyleSheet";
-import { COLORS, FONTS, SIZES } from "../../constants/theme";
-
-// Lazy load components
-const ProfileHeader = React.lazy(() =>
-  import("../../components/Profile/ProfileHeader")
-);
-const PendingAdsTab = React.lazy(() =>
-  import("../../components/Profile/PendingAdsTab")
-);
-const ArchivedAdsTab = React.lazy(() =>
-  import("../../components/Profile/ArchivedAdsTab")
-);
-
-// Skeleton loaders
-const SkeletonBox = ({ height = 20, width = "100%", style = {} }) => (
-  <View
-    style={{
-      height,
-      width,
-      backgroundColor: "#e0e0e0",
-      borderRadius: 4,
-      marginBottom: 10,
-      ...style,
-    }}
-  />
-);
-
-const Profile = ({ navigation }) => {
-  const { colors } = useTheme();
-  const { userInfo } = useContext(AuthContext);
-  const [selectedTab, setSelectedTab] = useState("pending");
-
-  const renderTabContent = () => {
-    switch (selectedTab) {
-      case "pending":
-        return (
-          <Suspense fallback={<SkeletonBox height={200} />}>
-            <PendingAdsTab navigation={navigation} />
-          </Suspense>
-        );
-      case "archived":
-        return (
-          <Suspense fallback={<SkeletonBox height={200} />}>
-            <ArchivedAdsTab navigation={navigation} />
-          </Suspense>
-        );
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <ScrollView style={{ backgroundColor: colors.background }}>
-      <View style={GlobalStyleSheet.container}>
-        <Suspense
-          fallback={
-            <View style={{ marginBottom: 20 }}>
-              <SkeletonBox height={20} width="40%" />
-              <SkeletonBox height={16} width="80%" />
-              <SkeletonBox height={16} width="60%" />
-            </View>
-          }
-        >
-          <ProfileHeader navigation={navigation} />
-        </Suspense>
-
-        <View style={GlobalStyleSheet.tabContainer}>
-          <TouchableOpacity
-            style={[
-              GlobalStyleSheet.tab,
-              selectedTab === "pending" && {
-                borderBottomColor: COLORS.primary,
-                borderBottomWidth: 2,
-              },
-            ]}
-            onPress={() => setSelectedTab("pending")}
-          >
-            <Text
-              style={[
-                FONTS.font,
-                {
-                  color:
-                    selectedTab === "pending"
-                      ? COLORS.primary
-                      : colors.textLight,
-                },
-              ]}
-            >
-              Pending Ads
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              GlobalStyleSheet.tab,
-              selectedTab === "archived" && {
-                borderBottomColor: COLORS.primary,
-                borderBottomWidth: 2,
-              },
-            ]}
-            onPress={() => setSelectedTab("archived")}
-          >
-            <Text
-              style={[
-                FONTS.font,
-                {
-                  color:
-                    selectedTab === "archived"
-                      ? COLORS.primary
-                      : colors.textLight,
-                },
-              ]}
-            >
-              Archived Ads
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {renderTabContent()}
-      </View>
-    </ScrollView>
   );
 };
 

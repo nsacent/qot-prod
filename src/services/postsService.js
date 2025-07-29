@@ -34,16 +34,17 @@ export const postsService = {
     return api.get(API_ENDPOINTS.POSTS.GET_ALL, { params: queryParams });
   },
 
-  getPendingApproval: (page = 1, perPage = 12) =>
+  getPendingApproval: (pendingApproval = 1) =>
     postsService.getAll({
-      pendingApproval: 1,
       belongLoggedUser: 1,
-      page,
-      perPage,
+      pendingApproval: 1,
     }),
 
-  getArchived: (page = 1, perPage = 12) =>
-    postsService.getAll({ belongLoggedUser: 1, archived: 1, page, perPage }),
+  getArchived: (archived = 1) =>
+    postsService.getAll({
+      belongLoggedUser: 1,
+      archived: 1,
+    }),
 
   getById: (id, embed = "pictures") =>
     api.get(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), {
