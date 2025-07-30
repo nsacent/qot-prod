@@ -8,20 +8,22 @@ import {
   Share,
   Animated,
   Platform,
-  ActivityIndicator,
   RefreshControl,
+  ScrollView as RNScrollView,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import { COLORS, FONTS, IMAGES, SIZES } from "../../constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
-import FeatherIcon from "react-native-vector-icons/Feather";
 import { ScrollView } from "react-native-gesture-handler";
 import { AuthContext } from "../../context/AuthProvider";
 import { format } from "date-fns";
-import MyadsSheet from "../../components/BottomSheet/MyadsSheet";
+import MyprofileSheet from "../../components/BottomSheet/MyadsSheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import postApiService from "../../../src/services/postsService";
+
+// Import Skeleton from moti
+import { Skeleton } from "moti/skeleton";
 
 const Profile = ({ navigation }) => {
   const { signOut, userData: contextUserData } = useContext(AuthContext);
@@ -36,6 +38,27 @@ const Profile = ({ navigation }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const moresheet = useRef();
+
+  const actions = [
+    {
+      icon: IMAGES.delete,
+      label: "Delete",
+      color: "red",
+      onPress: handleDelete,
+    },
+    {
+      icon: IMAGES.disable,
+      label: "Archive",
+      color: colors.title,
+      onPress: handleArchive,
+    },
+    {
+      icon: IMAGES.write,
+      label: "Edit",
+      color: colors.title,
+      onPress: handleEdit,
+    },
+  ];
 
   const theme = useTheme();
   const { colors } = theme;
@@ -60,7 +83,6 @@ const Profile = ({ navigation }) => {
       setLoading(true);
       setError(null);
 
-      // Fetch both pending and archived ads in parallel
       const [pendingResponse, archivedResponse] = await Promise.all([
         postApiService.posts.getPendingApproval({ pendingApproval: 1 }),
         postApiService.posts.getArchived({ archived: 1 }),
@@ -109,7 +131,7 @@ const Profile = ({ navigation }) => {
   const handleArchiveAd = async (adId) => {
     try {
       await apiService.posts.archive(adId);
-      fetchAds(); // Refresh the ads list
+      fetchAds();
     } catch (error) {
       console.error("Error archiving ad:", error);
     }
@@ -118,7 +140,7 @@ const Profile = ({ navigation }) => {
   const handleUnarchiveAd = async (adId) => {
     try {
       await apiService.posts.unarchive(adId);
-      fetchAds(); // Refresh the ads list
+      fetchAds();
     } catch (error) {
       console.error("Error unarchiving ad:", error);
     }
@@ -127,7 +149,7 @@ const Profile = ({ navigation }) => {
   const handleDeleteAd = async (adId) => {
     try {
       await apiService.posts.delete(adId);
-      fetchAds(); // Refresh the ads list
+      fetchAds();
     } catch (error) {
       console.error("Error deleting ad:", error);
     }
@@ -280,9 +302,82 @@ const Profile = ({ navigation }) => {
     );
   };
 
+  // Skeleton placeholder for ad item
+  const renderSkeletonAd = () => (
+    <View
+      style={[
+        GlobalStyleSheet.shadow2,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          padding: 10,
+          paddingLeft: 20,
+          marginBottom: 20,
+          borderRadius: 8,
+        },
+      ]}
+    >
+      <View style={{ flexDirection: "row", paddingBottom: 0 }}>
+        {/* Image skeleton */}
+        <Skeleton colorMode="light" radius={6} width={70} height={70} />
+        {/* Text container */}
+        <View style={{ marginLeft: 10, flex: 1 }}>
+          {/* Title skeleton */}
+          <Skeleton
+            colorMode="light"
+            radius={4}
+            width={"70%"}
+            height={16}
+            style={{ marginBottom: 6, marginTop: 4 }}
+          />
+          {/* Price skeleton */}
+          <Skeleton
+            colorMode="light"
+            radius={4}
+            width={"40%"}
+            height={14}
+            style={{ marginBottom: 6 }}
+          />
+          {/* Status badge skeleton */}
+          <Skeleton
+            colorMode="light"
+            radius={20}
+            width={100}
+            height={24}
+            style={{ marginTop: 8 }}
+          />
+        </View>
+      </View>
+
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingTop: 10,
+          paddingBottom: 0,
+        }}
+      >
+        {/* Views and likes skeleton */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 15 }}>
+          <Skeleton colorMode="light" radius={4} width={60} height={14} />
+          <Skeleton
+            colorMode="light"
+            radius={4}
+            width={60}
+            height={14}
+            style={{ marginLeft: 10 }}
+          />
+        </View>
+        {/* More button skeleton */}
+        <Skeleton colorMode="light" radius={20} width={40} height={40} />
+      </View>
+    </View>
+  );
+
   return (
     <>
-      <ScrollView
+      <RNScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -505,7 +600,7 @@ const Profile = ({ navigation }) => {
                     top: 10,
                     right: 10,
                   }}
-                  onPress={() => navigation.navigate("EditProfile")}
+                  onPress={() => navigation.navigate("Editprofile")}
                 >
                   <Image
                     style={{ height: 18, width: 18, tintColor: "#fff" }}
@@ -567,18 +662,7 @@ const Profile = ({ navigation }) => {
             </View>
           </View>
 
-          {loading ? (
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-                height: 200,
-              }}
-            >
-              <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
-          ) : error ? (
+          {error ? (
             <View
               style={{
                 flex: 1,
@@ -630,6 +714,7 @@ const Profile = ({ navigation }) => {
                   }
                 }}
               >
+                {/* Pending Ads Tab */}
                 <View
                   style={{
                     marginTop: 20,
@@ -648,7 +733,15 @@ const Profile = ({ navigation }) => {
                         paddingBottom: 80,
                       }}
                     >
-                      {pendingAds.length > 0 ? (
+                      {loading ? (
+                        Array(5)
+                          .fill(null)
+                          .map((_, i) => (
+                            <React.Fragment key={`skel-pending-${i}`}>
+                              {renderSkeletonAd()}
+                            </React.Fragment>
+                          ))
+                      ) : pendingAds.length > 0 ? (
                         pendingAds.map((data) => renderAdItem(data, true))
                       ) : (
                         <View
@@ -667,6 +760,7 @@ const Profile = ({ navigation }) => {
                   </ScrollView>
                 </View>
 
+                {/* Archived Ads Tab */}
                 <View
                   style={{
                     marginTop: 20,
@@ -685,7 +779,15 @@ const Profile = ({ navigation }) => {
                         paddingBottom: 80,
                       }}
                     >
-                      {archivedAds.length > 0 ? (
+                      {loading ? (
+                        Array(3)
+                          .fill(null)
+                          .map((_, i) => (
+                            <React.Fragment key={`skel-archived-${i}`}>
+                              {renderSkeletonAd()}
+                            </React.Fragment>
+                          ))
+                      ) : archivedAds.length > 0 ? (
                         archivedAds.map((data) => renderAdItem(data, false))
                       ) : (
                         <View
@@ -707,7 +809,7 @@ const Profile = ({ navigation }) => {
             </View>
           )}
         </SafeAreaView>
-      </ScrollView>
+      </RNScrollView>
 
       <MyadsSheet
         ref={moresheet}
