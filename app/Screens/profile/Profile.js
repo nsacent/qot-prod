@@ -26,8 +26,7 @@ import postsService from "../../../src/services/postsService";
 
 const Profile = ({ navigation }) => {
   const scrollRef = useRef(null);
-  const { signOut, userData: contextUserData } = useContext(AuthContext);
-  const [userData, setUserData] = useState(contextUserData || null);
+  const { userData } = useContext(AuthContext);
   const [pendingAds, setPendingAds] = useState([]);
   const [archivedAds, setArchivedAds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -79,17 +78,6 @@ const Profile = ({ navigation }) => {
   ];
 
   useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const storedUser = await AsyncStorage.getItem("userData");
-        if (storedUser) {
-          setUserData(JSON.parse(storedUser));
-        }
-      } catch (e) {
-        console.error("Failed to load user data from storage:", e);
-      }
-    };
-    loadUserData();
     fetchUserMiniStats(userData.id);
     fetchAds();
   }, []);
