@@ -18,14 +18,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ScrollView } from "react-native-gesture-handler";
 import { AuthContext } from "../../context/AuthProvider";
 import { format } from "date-fns";
-import MyprofileSheet from "../../components/BottomSheet/MyadsSheet";
+import MyprofileSheet from "../../components/BottomSheet/MyprofileSheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import postApiService from "../../../src/services/postsService";
-
-// Import Skeleton from moti
+import { ApiService } from "../../../src/services/api";
 import { Skeleton } from "moti/skeleton";
+import postsService from "../../../src/services/postsService";
 
 const Profile = ({ navigation }) => {
+  const scrollRef = useRef(null);
   const { signOut, userData: contextUserData } = useContext(AuthContext);
   const [userData, setUserData] = useState(contextUserData || null);
   const [pendingAds, setPendingAds] = useState([]);
@@ -33,35 +33,50 @@ const Profile = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [miniStats, setMiniStats] = useState([]);
 
-  const scrollRef = useRef();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const moresheet = useRef();
+  const moresheetPending = useRef();
+  const moresheetArchived = useRef();
+  const theme = useTheme();
+  const { colors } = theme;
 
-  const actions = [
+  const actionsPending = [
     {
       icon: IMAGES.delete,
       label: "Delete",
       color: "red",
-      onPress: handleDelete,
-    },
-    {
-      icon: IMAGES.disable,
-      label: "Archive",
-      color: colors.title,
-      onPress: handleArchive,
+      onPress: (item) => handleDeleteAd(item.id),
     },
     {
       icon: IMAGES.write,
       label: "Edit",
       color: colors.title,
-      onPress: handleEdit,
+      onPress: (item) => handleEditAd(item.id),
     },
   ];
 
-  const theme = useTheme();
-  const { colors } = theme;
+  const actionsArchived = [
+    {
+      icon: IMAGES.delete,
+      label: "Delete",
+      color: "red",
+      onPress: (item) => handleDeleteAd(item.id),
+    },
+    {
+      icon: IMAGES.verified,
+      label: "UnArchive",
+      color: colors.title,
+      onPress: (item) => handleUnarchiveAd(item.id),
+    },
+    {
+      icon: IMAGES.write,
+      label: "Edit",
+      color: colors.title,
+      onPress: (item) => handleEditAd(item.id),
+    },
+  ];
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -75,6 +90,7 @@ const Profile = ({ navigation }) => {
       }
     };
     loadUserData();
+    fetchUserMiniStats(userData.id);
     fetchAds();
   }, []);
 
@@ -84,8 +100,8 @@ const Profile = ({ navigation }) => {
       setError(null);
 
       const [pendingResponse, archivedResponse] = await Promise.all([
-        postApiService.posts.getPendingApproval({ pendingApproval: 1 }),
-        postApiService.posts.getArchived({ archived: 1 }),
+        postsService.posts.getPendingApproval({ pendingApproval: 1 }),
+        postsService.posts.getArchived({ archived: 1 }),
       ]);
 
       setPendingAds(pendingResponse.data?.result?.data || []);
@@ -101,6 +117,7 @@ const Profile = ({ navigation }) => {
 
   const onRefresh = () => {
     setRefreshing(true);
+    fetchUserMiniStats(userData.id);
     fetchAds();
   };
 
@@ -128,28 +145,61 @@ const Profile = ({ navigation }) => {
     }
   };
 
-  const handleArchiveAd = async (adId) => {
+  const fetchUserMiniStats = async (userId) => {
     try {
-      await apiService.posts.archive(adId);
+      const response = await ApiService.userStats(userId);
+      if (response.data?.success && response.data?.result?.posts) {
+        setMiniStats(response.data?.result?.posts);
+      } else {
+        return {
+          published: 0,
+          pendingApproval: 0,
+          archived: 0,
+          visits: 0,
+          favourite: 0,
+        };
+      }
+    } catch (error) {
+      console.error("Error fetching mini stats:", error);
+      return {
+        published: 0,
+        pendingApproval: 0,
+        archived: 0,
+        visits: 0,
+        favourite: 0,
+      };
+    }
+  };
+
+  const handleEditAd = async (id) => {
+    try {
+      console.log("Hanndle Edit Reached");
+      //await apiService.posts.archive(id);
+
       fetchAds();
+      setRefreshing(false);
     } catch (error) {
       console.error("Error archiving ad:", error);
     }
   };
 
-  const handleUnarchiveAd = async (adId) => {
+  const handleUnarchiveAd = async (id) => {
     try {
-      await apiService.posts.unarchive(adId);
+      console.log("Hanndle Unarchieve Reached", id);
+      await postsService.posts.unarchive(id);
       fetchAds();
+      setRefreshing(false);
     } catch (error) {
       console.error("Error unarchiving ad:", error);
     }
   };
 
-  const handleDeleteAd = async (adId) => {
+  const handleDeleteAd = async (id) => {
     try {
-      await apiService.posts.delete(adId);
+      console.log("Hanndle Delete Reached");
+      // await apiService.posts.delete(id);
       fetchAds();
+      setRefreshing(false);
     } catch (error) {
       console.error("Error deleting ad:", error);
     }
@@ -286,7 +336,11 @@ const Profile = ({ navigation }) => {
             </View>
           </View>
           <TouchableOpacity
-            onPress={() => moresheet.current.openSheet(data)}
+            onPress={
+              isPending
+                ? () => moresheetPending.current.openSheet(data)
+                : () => moresheetArchived.current.openSheet(data)
+            }
             style={[
               GlobalStyleSheet.background,
               { marginRight: 5, height: 40, width: 40 },
@@ -531,10 +585,7 @@ const Profile = ({ navigation }) => {
                     paddingHorizontal: 20,
                   }}
                 >
-                  <TouchableOpacity
-                    style={{ alignItems: "center" }}
-                    onPress={() => navigation.navigate("FollowerFollowing")}
-                  >
+                  <TouchableOpacity style={{ alignItems: "center" }}>
                     <Text
                       style={{
                         ...FONTS.h6,
@@ -542,7 +593,7 @@ const Profile = ({ navigation }) => {
                         color: COLORS.title,
                       }}
                     >
-                      1520
+                      {miniStats.visits}
                     </Text>
                     <Text
                       style={{
@@ -564,10 +615,7 @@ const Profile = ({ navigation }) => {
                     ]}
                     style={{ width: 2, height: 50 }}
                   ></LinearGradient>
-                  <TouchableOpacity
-                    style={{ alignItems: "center" }}
-                    onPress={() => navigation.navigate("FollowerFollowing")}
-                  >
+                  <TouchableOpacity style={{ alignItems: "center" }}>
                     <Text
                       style={{
                         ...FONTS.h6,
@@ -575,7 +623,7 @@ const Profile = ({ navigation }) => {
                         color: COLORS.title,
                       }}
                     >
-                      360
+                      {miniStats.favourite}
                     </Text>
                     <Text
                       style={{
@@ -586,7 +634,7 @@ const Profile = ({ navigation }) => {
                         lineHeight: 14,
                       }}
                     >
-                      Favorites
+                      Liked
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -811,12 +859,8 @@ const Profile = ({ navigation }) => {
         </SafeAreaView>
       </RNScrollView>
 
-      <MyadsSheet
-        ref={moresheet}
-        onArchive={handleArchiveAd}
-        onUnarchive={handleUnarchiveAd}
-        onDelete={handleDeleteAd}
-      />
+      <MyprofileSheet ref={moresheetPending} actions={actionsPending} />
+      <MyprofileSheet ref={moresheetArchived} actions={actionsArchived} />
     </>
   );
 };

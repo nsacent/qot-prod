@@ -59,7 +59,6 @@ import Selllist from "../Screens/sell/Selllist/Selllist";
 import Form from "../Screens/sell/Sellfrom/Form";
 
 // Profile
-import FollowerFollowing from "../Screens/profile/Follower&Following";
 import Anotherprofile from "../Screens/profile/Anotherprofile";
 
 // Settings
@@ -141,10 +140,6 @@ const StackNavigator = () => {
             {/* ... all other sell screens ... */}
 
             {/* Profile */}
-            <StackComponent.Screen
-              name="FollowerFollowing"
-              component={FollowerFollowing}
-            />
             <StackComponent.Screen name="Editprofile" component={Editprofile} />
             <StackComponent.Screen
               name="Anotherprofile"
