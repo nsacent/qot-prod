@@ -32,7 +32,7 @@ export const API_ENDPOINTS = {
   USER: {
     PROFILE: "/users/profile",
     UPDATE: "/users/update",
-    AVATAR: "/users/avatar",
+    PHOTO: "/users/:id/photo",
     BY_ID: "/users/:id",
     STATS: "/users/:id/stats",
   },

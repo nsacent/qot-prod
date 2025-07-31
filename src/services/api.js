@@ -153,15 +153,16 @@ export const ApiService = {
   // User
   getProfile: () => api.get(API_ENDPOINTS.USER.PROFILE),
   updateProfile: (data) => api.put(API_ENDPOINTS.USER.UPDATE, data),
-  uploadAvatar: (imageData) => {
+  uploadPhoto: (id, imageData) => {
     const formData = new FormData();
-    formData.append("avatar", imageData);
-    return api.post(API_ENDPOINTS.USER.AVATAR, formData, {
+    formData.append("photo", imageData);
+    return api.post(replaceParams(API_ENDPOINTS.USER.PHOTO, id), formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
     });
   },
+
   getUser: (id) => api.get(replaceParams(API_ENDPOINTS.USER.BY_ID, { id })),
   userStats: (id) => api.get(replaceParams(API_ENDPOINTS.USER.STATS, { id })),
 

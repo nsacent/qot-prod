@@ -20,9 +20,10 @@ import Header from "../../layout/Header";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import { SIZES, FONTS, IMAGES, COLORS } from "../../constants/theme";
 import Button from "../../components/Button/Button";
-import api from "../../../src/services/api";
+import api, { ApiService } from "../../../src/services/api";
 import * as ImagePicker from "expo-image-picker";
 import { AnimatedCircularProgress } from "react-native-circular-progress";
+import axios from "axios";
 
 const genderMap = { 1: "male", 2: "female" };
 const reverseGenderMap = { male: 1, female: 2 };
@@ -36,6 +37,7 @@ const EditProfile = ({ navigation }) => {
 
   const [uploadProgress, setUploadProgress] = useState(0); // 0 to 100
   const [isUploading, setIsUploading] = useState(false);
+  const [userImahe, setUserImage] = useState(null);
 
   const [formData, setFormData] = useState({
     name: userData?.name || "",
@@ -113,7 +115,34 @@ const EditProfile = ({ navigation }) => {
     }
   };
 
-  const uploadWithProgress = (formData) => {
+  const uploadWithProgress = async (userId, image) => {
+    try {
+      const response = await ApiService.uploadPhoto(userId, image, {
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress(percent);
+          }
+        },
+      });
+      console.log(response.data);
+
+      return response.data;
+    } catch (error) {
+      console.log("ERROR UPLOADINF IMAGE", error);
+
+      throw {
+        status: error.response?.status,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.response?.data?.error || "Upload failed",
+      };
+    }
+  };
+
+  /*const uploadWithProgress = (formData) => {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
@@ -155,6 +184,17 @@ const EditProfile = ({ navigation }) => {
 
       xhr.send(formData);
     });
+  };*/
+
+  const getUserIPAddress = async () => {
+    try {
+      const response = await axios.get("https://api.ipify.org?format=json");
+      const ipAddress = response.data.ip;
+      return ipAddress;
+    } catch (error) {
+      console.error("Error fetching IP address:", error);
+      return "127.0.0.1";
+    }
   };
 
   async function handleImageSelect() {
@@ -198,27 +238,30 @@ const EditProfile = ({ navigation }) => {
         if (blob.size > 1500 * 1024) {
           throw new Error("Image must be smaller than 1.5MB");
         }
-
-        formData.append("photo_path", blob, `user_${userId}_photo.jpg`);
+        setUserImage(
+          formData.append("photo_path", blob, `user_${userId}_photo.jpg`)
+        );
       }
       // Mobile implementation
       else {
-        formData.append("photo_path", {
-          uri: localUri,
-          name: `user_${userId}_photo.jpg`,
-          type: "image/jpeg",
-        });
+        setUserImage(
+          formData.append("photo_path", {
+            uri: localUri,
+            name: `user_${userId}_photo.jpg`,
+            type: "image/jpeg",
+          })
+        );
       }
 
       // Required fields
-      formData.append("latest_update_ip", "127.0.0.1");
+      formData.append("latest_update_ip", getUserIPAddress() || "127.0.0.1");
       formData.append("_method", "PUT"); // Critical for Laravel-style override
 
       // 6. Make the POST request with method override
       setIsUploading(true);
       setUploadProgress(0);
 
-      const responseData = await uploadWithProgress(formData);
+      const responseData = await uploadWithProgress(userId, userImage);
 
       updateUserData(responseData.result);
       showSnackbar("Profile photo updated successfully!", "success");
