@@ -153,13 +153,21 @@ export const ApiService = {
   // User
   getProfile: () => api.get(API_ENDPOINTS.USER.PROFILE),
   updateProfile: (data) => api.put(API_ENDPOINTS.USER.UPDATE, data),
-  uploadPhoto: (id, imageData) => {
+
+  uploadPhoto: (userId, imageData, config = {}) => {
     const formData = new FormData();
-    formData.append("photo", imageData);
-    return api.post(replaceParams(API_ENDPOINTS.USER.PHOTO, id), formData, {
+
+    formData.append("avatar", {
+      uri: imageData.uri,
+      name: imageData.name || `user_${userId}_photo.jpg`,
+      type: imageData.type || "image/jpeg",
+    });
+
+    return api.post(`/users/${userId}/photo`, formData, {
       headers: {
         "Content-Type": "multipart/form-data",
       },
+      ...config, // allows `onUploadProgress` to be passed in
     });
   },
 

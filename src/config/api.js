@@ -52,6 +52,7 @@ export const API_ENDPOINTS = {
     GET_ALL: "/posts",
     SEARCH: "/posts/search",
     BY_ID: "/posts/:id",
+    GET_FAVORITE: "/posts/savedPosts",
   },
 
   SETTINGS: {

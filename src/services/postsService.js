@@ -51,6 +51,11 @@ export const postsService = {
       params: { embed },
     }),
 
+  getFavorite: (embed) =>
+    api.get(replaceParams(API_ENDPOINTS.POSTS.GET_FAVORITE), {
+      params: { embed },
+    }),
+
   create: (postData, pictures = []) => {
     const formData = new FormData();
     Object.entries(postData).forEach(([key, value]) => {
