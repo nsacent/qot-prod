@@ -23,6 +23,7 @@ import MyadsSheet from "../../components/BottomSheet/MyadsSheet";
 import { getCityName, preloadCities } from "../../../src/services/cityService";
 import { Skeleton } from "moti/skeleton";
 import postsService from "../../../src/services/postsService";
+import ConfirmModal from "../../components/Modal/ConfirmModal";
 
 const API_BASE_URL = "https://qot.ug/api";
 
@@ -48,6 +49,7 @@ const Myads = ({ navigation }) => {
   const [hasMoreFavorites, setHasMoreFavorites] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingIds, setDeletingIds] = useState([]); // Track multiple deletions
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Slide indicator animation
   const slideIndicator = scrollX.interpolate({
@@ -82,17 +84,6 @@ const Myads = ({ navigation }) => {
       return fetchWithRetry(url, options, retries - 1);
     }
   };
-
-  /*const fetchAdsData = async () => {
-    const headers = getHeaders();
-    return fetchWithRetry(
-      `${API_BASE_URL}/posts?belongLoggedUser=1&embed=pictures`,
-      {
-        headers,
-        timeout: 10000,
-      }
-    );
-  };*/
 
   const fetchAdsData = async () => {
     return await postsService.posts.getAll({
@@ -334,6 +325,25 @@ const Myads = ({ navigation }) => {
         ]}
         onPress={() => navigation.navigate("ItemDetails", { itemId: item.id })}
       >
+        <TouchableOpacity
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            zIndex: 1,
+          }}
+          onPress={() => onMorePress(item.id)}
+        >
+          <Image
+            source={IMAGES.more}
+            style={{
+              width: 18,
+              height: 18,
+              resizeMode: "contain",
+              tintColor: colors.title,
+            }}
+          />
+        </TouchableOpacity>
         <View
           style={{
             flexDirection: "row",
@@ -386,25 +396,6 @@ const Myads = ({ navigation }) => {
                 ACTIVE
               </Text>
             </View>
-            <TouchableOpacity
-              style={{
-                position: "absolute",
-                right: 50,
-                margin: 10,
-                marginTop: 5,
-              }}
-              onPress={() => onMorePress(item.id)}
-            >
-              <Image
-                style={{
-                  width: 18,
-                  height: 18,
-                  resizeMode: "contain",
-                  tintColor: colors.title,
-                }}
-                source={IMAGES.more}
-              />
-            </TouchableOpacity>
           </View>
         </View>
         <View
@@ -486,7 +477,8 @@ const Myads = ({ navigation }) => {
                 alignItems: "center",
               },
             ]}
-            onPress={() => onDelete(item.id)}
+            //onPress={() => onDelete(item.id)}
+            onPress={() => setShowConfirm(true)}
             disabled={isDeleting}
           >
             {isDeleting ? (
@@ -510,6 +502,30 @@ const Myads = ({ navigation }) => {
             borderBottomLeftRadius: 6,
           }}
         ></View>
+
+        {showConfirm && (
+          <ConfirmModal
+            visible={showConfirm}
+            onRequestClose={() => setShowConfirm(false)}
+            iconName="log-out-outline"
+            iconColor={COLORS.warning}
+            iconSize={65}
+            title="Confirm Delete"
+            message="Are you sure you want to Delete This ad?"
+            confirmText="Yes, Delete"
+            cancelText="Cancel"
+            onConfirm={() => {
+              setShowConfirm(false);
+              handleDelete(item.id);
+            }}
+            onCancel={() => setShowConfirm(false)}
+            confirmButtonProps={{ color: COLORS.danger }}
+            cancelButtonProps={{
+              outline: true,
+              color: COLORS.primary,
+            }}
+          />
+        )}
       </TouchableOpacity>
     );
   };
@@ -926,60 +942,64 @@ const Myads = ({ navigation }) => {
   }, [userToken]);
 
   return (
-    <SafeAreaView
-      style={{ backgroundColor: colors.card, flex: 1, paddingBottom: 80 }}
-    >
-      <Header
-        title="My Ads"
-        leftIcon={"back"}
-        titleLeft
-        onPressLeft={() => navigation.goBack()}
-      />
-
-      {!citiesLoaded && (
-        <View style={{ padding: 20 }}>
-          <ActivityIndicator size="small" color={COLORS.primary} />
-        </View>
-      )}
-
-      <TabHeader />
-
-      <View
-        style={[
-          Platform.OS === "web" && GlobalStyleSheet.container,
-          { padding: 0 },
-        ]}
+    <>
+      <SafeAreaView
+        style={{ backgroundColor: colors.card, flex: 1, paddingBottom: 80 }}
       >
-        <ScrollView
-          horizontal
-          scrollEventThrottle={16}
-          showsHorizontalScrollIndicator={false}
-          pagingEnabled
-          ref={scrollRef}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-            { useNativeDriver: false }
-          )}
-          onMomentumScrollEnd={(e) => {
-            const offsetX = e.nativeEvent.contentOffset.x;
-            const screenWidth = SIZES.width;
+        <Header
+          title="My Ads"
+          leftIcon={"back"}
+          titleLeft
+          onPressLeft={() => navigation.goBack()}
+        />
 
-            if (Math.round(offsetX) === Math.round(screenWidth)) {
-              setCurrentIndex(1);
-            } else if (Math.round(offsetX) === 0) {
-              setCurrentIndex(0);
-            } else {
-              setCurrentIndex(0);
-            }
-          }}
+        {!citiesLoaded && (
+          <View style={{ padding: 20 }}>
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          </View>
+        )}
+
+        <TabHeader />
+
+        <View
+          style={[
+            Platform.OS === "web" && GlobalStyleSheet.container,
+            { padding: 0 },
+          ]}
         >
-          {renderAdsTab()}
-          {renderFavoritesTab()}
-        </ScrollView>
-      </View>
+          <ScrollView
+            horizontal
+            scrollEventThrottle={16}
+            showsHorizontalScrollIndicator={false}
+            pagingEnabled
+            ref={scrollRef}
+            onScroll={Animated.event(
+              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+              { useNativeDriver: false }
+            )}
+            onMomentumScrollEnd={(e) => {
+              const offsetX = e.nativeEvent.contentOffset.x;
+              const screenWidth = SIZES.width;
 
-      <MyadsSheet ref={moresheet} onDelete={handleDelete} />
-    </SafeAreaView>
+              if (Math.round(offsetX) === Math.round(screenWidth)) {
+                setCurrentIndex(1);
+              } else if (Math.round(offsetX) === 0) {
+                setCurrentIndex(0);
+              } else {
+                setCurrentIndex(0);
+              }
+            }}
+          >
+            {renderAdsTab()}
+            {renderFavoritesTab()}
+          </ScrollView>
+        </View>
+
+        <MyadsSheet ref={moresheet} onDelete={() => setShowConfirm(true)} />
+      </SafeAreaView>
+
+      {/* ConfirmModal sits at the top level */}
+    </>
   );
 };
 
