@@ -50,6 +50,7 @@ const Myads = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [deletingIds, setDeletingIds] = useState([]); // Track multiple deletions
   const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmTargetId, setConfirmTargetId] = useState(null);
 
   // Slide indicator animation
   const slideIndicator = scrollX.interpolate({
@@ -300,7 +301,13 @@ const Myads = ({ navigation }) => {
     return { uri: firstPicture.url.medium };
   };
 
-  const AdItem = ({ item, onDelete, onMorePress, deletingIds }) => {
+  const AdItem = ({
+    item,
+    onDelete,
+    onMorePress,
+    deletingIds,
+    onRequestDelete,
+  }) => {
     const isDeleting = deletingIds.includes(item.id);
     const [isProcessing, setIsProcessing] = useState(false);
     const isFavorited = favourites.some((fav) => fav.id === item.id);
@@ -478,7 +485,7 @@ const Myads = ({ navigation }) => {
               },
             ]}
             //onPress={() => onDelete(item.id)}
-            onPress={() => setShowConfirm(true)}
+            onPress={() => onRequestDelete(item.id)}
             disabled={isDeleting}
           >
             {isDeleting ? (
@@ -502,30 +509,6 @@ const Myads = ({ navigation }) => {
             borderBottomLeftRadius: 6,
           }}
         ></View>
-
-        {showConfirm && (
-          <ConfirmModal
-            visible={showConfirm}
-            onRequestClose={() => setShowConfirm(false)}
-            iconName="log-out-outline"
-            iconColor={COLORS.warning}
-            iconSize={65}
-            title="Confirm Delete"
-            message="Are you sure you want to Delete This ad?"
-            confirmText="Yes, Delete"
-            cancelText="Cancel"
-            onConfirm={() => {
-              setShowConfirm(false);
-              handleDelete(item.id);
-            }}
-            onCancel={() => setShowConfirm(false)}
-            confirmButtonProps={{ color: COLORS.danger }}
-            cancelButtonProps={{
-              outline: true,
-              color: COLORS.primary,
-            }}
-          />
-        )}
       </TouchableOpacity>
     );
   };
@@ -797,19 +780,46 @@ const Myads = ({ navigation }) => {
           {error}
         </Text>
       ) : ads.length > 0 ? (
-        <FlatList
-          data={ads}
-          renderItem={({ item }) => (
-            <AdItem
-              item={item}
-              onDelete={handleDelete}
-              onMorePress={(id) => moresheet.current?.openSheet(id)}
-              deletingIds={deletingIds}
-            />
-          )}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 10 }}
-        />
+        <>
+          <FlatList
+            data={ads}
+            renderItem={({ item }) => (
+              <AdItem
+                item={item}
+                onMorePress={(id) => moresheet.current?.openSheet(id)}
+                deletingIds={deletingIds}
+                onRequestDelete={(id) => {
+                  setConfirmTargetId(id);
+                  setShowConfirm(true);
+                }}
+              />
+            )}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingHorizontal: 10 }}
+          />
+
+          <ConfirmModal
+            visible={showConfirm}
+            onRequestClose={() => setShowConfirm(false)}
+            iconName="trash-outline"
+            iconColor={COLORS.danger}
+            iconSize={65}
+            title="Confirm Delete"
+            message="Are you sure you want to delete this ad?"
+            confirmText="Yes, Delete"
+            cancelText="Cancel"
+            onConfirm={() => {
+              setShowConfirm(false);
+              if (confirmTargetId) handleDelete(confirmTargetId);
+            }}
+            onCancel={() => {
+              setShowConfirm(false);
+              setConfirmTargetId(null);
+            }}
+            confirmButtonProps={{ color: COLORS.danger }}
+            cancelButtonProps={{ outline: true, color: COLORS.primary }}
+          />
+        </>
       ) : (
         <Text
           style={{
@@ -953,11 +963,7 @@ const Myads = ({ navigation }) => {
           onPressLeft={() => navigation.goBack()}
         />
 
-        {!citiesLoaded && (
-          <View style={{ padding: 20 }}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          </View>
-        )}
+        {!citiesLoaded && <View style={{ padding: 0 }}></View>}
 
         <TabHeader />
 

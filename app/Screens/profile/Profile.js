@@ -186,8 +186,8 @@ const Profile = ({ navigation }) => {
     try {
       console.log("Hanndle Delete Reached");
       // await apiService.posts.delete(id);
-      fetchAds();
       setRefreshing(false);
+      fetchAds();
     } catch (error) {
       console.error("Error deleting ad:", error);
     }

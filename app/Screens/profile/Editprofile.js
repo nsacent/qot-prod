@@ -190,48 +190,69 @@ const EditProfile = ({ navigation }) => {
           contentContainerStyle={{ flexGrow: 1, padding: 20 }}
         >
           {/* Profile Photo */}
-          <View style={{ alignItems: "center", marginBottom: 24 }}>
-            <AnimatedCircularProgress
-              size={140}
-              width={3}
-              fill={uploadProgress}
-              tintColor={COLORS.primary}
-              backgroundColor="#e0e0e0"
-            >
-              {() => (
-                <Image
-                  source={{
-                    uri: localPreview || userData?.photo_url || IMAGES.Small5,
-                  }}
-                  style={{ width: 140, height: 140, borderRadius: 70 }}
-                />
-              )}
-            </AnimatedCircularProgress>
-            <TouchableOpacity
-              onPress={handleImageSelect}
-              style={{ position: "absolute", bottom: 0, right: 0 }}
-            >
-              <View
-                style={{
-                  backgroundColor: colors.card,
-                  padding: 6,
-                  borderRadius: 20,
-                }}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "center",
+              marginTop: 20,
+            }}
+          >
+            <View>
+              <AnimatedCircularProgress
+                size={140}
+                width={3}
+                fill={uploadProgress}
+                tintColor={COLORS.primary}
+                backgroundColor="#e0e0e0"
+              >
+                {() => (
+                  <Image
+                    source={{
+                      uri: localPreview || userData?.photo_url || IMAGES.Small5,
+                    }}
+                    style={{ width: 140, height: 140, borderRadius: 30 }}
+                  />
+                )}
+              </AnimatedCircularProgress>
+
+              <TouchableOpacity
+                // TODO: handleImageSelect
+                onPress={handleImageSelect}
+                style={{ position: "absolute", bottom: 0, right: 0 }}
               >
                 <View
                   style={{
-                    backgroundColor: COLORS.primary,
-                    padding: 6,
-                    borderRadius: 20,
+                    backgroundColor: colors.card,
+                    width: 36,
+                    height: 36,
+                    borderRadius: 50,
+                    alignItems: "center",
+                    justifyContent: "center",
                   }}
                 >
-                  <Image
-                    source={IMAGES.camera}
-                    style={{ width: 18, height: 18, tintColor: "#fff" }}
-                  />
+                  <View
+                    style={{
+                      backgroundColor: COLORS.primary,
+                      width: 30,
+                      height: 30,
+                      borderRadius: 50,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Image
+                      style={{
+                        width: 18,
+                        height: 18,
+                        resizeMode: "contain",
+                        tintColor: "#fff",
+                      }}
+                      source={IMAGES.camera}
+                    />
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Name */}

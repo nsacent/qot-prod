@@ -47,7 +47,16 @@ const MyadsSheet = (props, ref) => {
   }));
 
   const renderAction = (icon, label, color, onPress) => (
-    <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.row}
+      activeOpacity={0.7}
+      onPress={() => {
+        bottomSheetRef.current?.close(); // hide sheet
+        setTimeout(() => {
+          onPress?.(); // then perform the action
+        }, 100); // short delay ensures animation is smooth
+      }}
+    >
       <Image style={[styles.icon, { tintColor: color }]} source={icon} />
       <Text style={[styles.label, { color }]}>{label}</Text>
     </TouchableOpacity>
