@@ -164,8 +164,8 @@ const EditProfile = ({ navigation }) => {
       };
 
       const response = await api.put(`/users/${userId}`, payload);
-      if (response.data.success) {
-        updateUserData(response.data.result);
+      if (response.data?.success) {
+        updateUserData(response.data?.result);
         showSnackbar("Profile updated!");
         setTimeout(() => navigation.goBack(), 1500);
       } else throw new Error("Update failed");

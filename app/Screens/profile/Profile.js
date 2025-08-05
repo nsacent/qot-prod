@@ -184,10 +184,10 @@ const Profile = ({ navigation }) => {
 
   const handleDeleteAd = async (id) => {
     try {
-      console.log("Hanndle Delete Reached");
+      console.log("Hanndle Delete Reached", id);
       // await apiService.posts.delete(id);
       setRefreshing(false);
-      fetchAds();
+      //fetchAds();
     } catch (error) {
       console.error("Error deleting ad:", error);
     }

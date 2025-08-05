@@ -24,11 +24,10 @@ import { getCityName, preloadCities } from "../../../src/services/cityService";
 import { Skeleton } from "moti/skeleton";
 import postsService from "../../../src/services/postsService";
 import ConfirmModal from "../../components/Modal/ConfirmModal";
-
-const API_BASE_URL = "https://qot.ug/api";
+import api from "../../../src/services/api";
 
 const Myads = ({ navigation }) => {
-  const { userToken, userData } = useContext(AuthContext);
+  const { userToken } = useContext(AuthContext);
   const theme = useTheme();
   const { colors } = theme;
 
@@ -51,6 +50,7 @@ const Myads = ({ navigation }) => {
   const [deletingIds, setDeletingIds] = useState([]); // Track multiple deletions
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmTargetId, setConfirmTargetId] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   // Slide indicator animation
   const slideIndicator = scrollX.interpolate({
@@ -60,12 +60,6 @@ const Myads = ({ navigation }) => {
     ],
     outputRange: [0, (SIZES.width - 30) / 2],
     extrapolate: "clamp",
-  });
-
-  const getHeaders = () => ({
-    Authorization: `Bearer ${userToken}`,
-    "Content-Type": "application/json",
-    "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
   });
 
   const formatPrice = (price, currencyCode) => {
@@ -94,29 +88,34 @@ const Myads = ({ navigation }) => {
   };
 
   const fetchFavoritesData = async (page = 1) => {
-    const headers = getHeaders();
+    let savedResponse;
 
-    const savedResponse = await fetchWithRetry(
-      `${API_BASE_URL}/savedPosts?page=${page}`,
-      {
-        headers,
-        timeout: 10000,
+    try {
+      savedResponse = await postsService.posts.getFavorite({ page });
+
+      if (!savedResponse || !savedResponse.data || !savedResponse.data.result) {
+        console.error("Invalid response structure from getFavorite");
+        return { data: { result: { data: [] } } };
       }
-    );
 
-    if (page >= savedResponse.data.result.meta.last_page) {
+      console.log("Saved response:", savedResponse);
+    } catch (error) {
+      console.error("Failed to fetch favorites:", error);
+      return { data: { result: { data: [] } } };
+    }
+
+    const resultMeta = savedResponse.data.result.meta || {};
+    const resultData = savedResponse.data.result.data || [];
+
+    if (page >= resultMeta.last_page) {
       setHasMoreFavorites(false);
     }
 
     const postDetails = await Promise.all(
-      savedResponse.data.result.data.map(async (savedItem) => {
+      resultData.map(async (savedItem) => {
         try {
-          const postResponse = await fetchWithRetry(
-            `${API_BASE_URL}/posts/${savedItem.post_id}?embed=pictures`,
-            {
-              headers,
-              timeout: 10000,
-            }
+          const postResponse = await postsService.posts.getById(
+            savedItem.post_id
           );
           return {
             ...postResponse.data.result,
@@ -230,13 +229,12 @@ const Myads = ({ navigation }) => {
 
   const toggleFavorite = async (postId) => {
     try {
-      const headers = getHeaders();
       const isFavorited = favourites.some(
         (item) => item.id === postId.toString()
       );
 
       if (isFavorited) {
-        await axios.delete(`${API_BASE_URL}/savedPosts/${postId}`, { headers });
+        await postsService.posts.deleteFavorite(postId);
         setFavourites((prev) =>
           prev.filter((item) => item.id !== postId.toString())
         );
@@ -244,19 +242,19 @@ const Myads = ({ navigation }) => {
           prev.filter((item) => item.id !== postId.toString())
         );
       } else {
-        const response = await axios.get(
-          `${API_BASE_URL}/posts/${postId}?embed=pictures`,
-          { headers }
-        );
+        const response = await postsService.posts.getById(postId, {
+          embed: "pictures",
+        });
+
         const newFavorite = await processItemsWithCities(
           [response.data.result],
           userToken
         );
-        await axios.post(
-          `${API_BASE_URL}/savedPosts`,
-          { post_id: postId },
-          { headers }
-        );
+
+        await postsService.posts.makeFavorate({
+          post_id: postId,
+        });
+
         setFavourites((prev) => [...prev, ...newFavorite]);
         setAllFavorites((prev) => [...prev, ...newFavorite]);
       }
@@ -277,8 +275,8 @@ const Myads = ({ navigation }) => {
   const handleDelete = async (adId) => {
     try {
       setDeletingIds((prev) => [...prev, adId]); // Add to deleting array
-      const headers = getHeaders();
-      await axios.delete(`${API_BASE_URL}/posts/${adId}`, { headers });
+
+      await postsService.posts.delete(adId);
       setAds((prev) => prev.filter((item) => item.id !== adId));
     } catch (err) {
       console.error("Delete failed:", err);
@@ -299,6 +297,47 @@ const Myads = ({ navigation }) => {
     }
 
     return { uri: firstPicture.url.medium };
+  };
+
+  const handleArchive = async (item) => {
+    if (!item?.id) return;
+
+    try {
+      setDeletingIds((prev) => [...prev, item.id]);
+
+      const now = new Date().toISOString();
+
+      const payload = {
+        category_id: item.category_id,
+        post_type_id: item.post_type_id,
+        title: item.title,
+        description: item.description,
+        contact_name: item.contact_name || item.name || "Unknown",
+        city_id: item.city_id,
+        email: item.email,
+        price: item.price,
+        archived_at: now,
+        archived_manually_at: now,
+      };
+
+      const response = await postsService.posts.archive(item.id, payload);
+
+      if (response?.data?.success) {
+        setAds((prev) => prev.filter((ad) => ad.id !== item.id));
+        moresheet.current?.close?.();
+      } else {
+        console.warn(
+          "Failed to archive:",
+          response.data?.message || "Unknown error"
+        );
+        alert("Failed to archive this post.");
+      }
+    } catch (error) {
+      console.error("Archive error:", error);
+      alert("An error occurred while archiving.");
+    } finally {
+      setDeletingIds((prev) => prev.filter((id) => id !== item.id));
+    }
   };
 
   const AdItem = ({
@@ -339,7 +378,7 @@ const Myads = ({ navigation }) => {
             right: 8,
             zIndex: 1,
           }}
-          onPress={() => onMorePress(item.id)}
+          onPress={() => onMorePress(item)}
         >
           <Image
             source={IMAGES.more}
@@ -633,7 +672,7 @@ const Myads = ({ navigation }) => {
               currentIndex == 0 && { color: COLORS.primary },
             ]}
           >
-            Ads
+            Active Ads
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -646,7 +685,7 @@ const Myads = ({ navigation }) => {
               currentIndex == 1 && { color: COLORS.primary },
             ]}
           >
-            Favourites
+            Favorites
           </Text>
         </TouchableOpacity>
         <Animated.View
@@ -786,7 +825,10 @@ const Myads = ({ navigation }) => {
             renderItem={({ item }) => (
               <AdItem
                 item={item}
-                onMorePress={(id) => moresheet.current?.openSheet(id)}
+                onMorePress={(item) => {
+                  setSelectedItem(item);
+                  moresheet.current?.openSheet();
+                }}
                 deletingIds={deletingIds}
                 onRequestDelete={(id) => {
                   setConfirmTargetId(id);
@@ -1001,10 +1043,22 @@ const Myads = ({ navigation }) => {
           </ScrollView>
         </View>
 
-        <MyadsSheet ref={moresheet} onDelete={() => setShowConfirm(true)} />
+        <MyadsSheet
+          ref={moresheet}
+          onDelete={() => {
+            setConfirmTargetId(selectedItem?.id);
+            setShowConfirm(true);
+          }}
+          onEdit={() => {
+            navigation.navigate("EditAd", { item: selectedItem });
+          }}
+          onArchive={() => {
+            console.log("Archive", selectedItem);
+            handleArchive(selectedItem); // ✅ fixed
+            //moresheet.current?.close(); // ✅ close after archive
+          }}
+        />
       </SafeAreaView>
-
-      {/* ConfirmModal sits at the top level */}
     </>
   );
 };

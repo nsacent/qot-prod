@@ -51,10 +51,31 @@ export const postsService = {
       params: { embed },
     }),
 
-  getFavorite: (embed) =>
-    api.get(replaceParams(API_ENDPOINTS.POSTS.GET_FAVORITE), {
+  getFavorite: (params = {}) => {
+    const queryParams = { ...params, embed: params.embed || "page=1" };
+    return api.get(API_ENDPOINTS.FAVORITE.GET_FAVORITE, {
+      params: queryParams,
+    });
+  },
+
+  getFavoriteById: (id, embed = {}) => {
+    api.get(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), {
       params: { embed },
-    }),
+    });
+  },
+
+  makeFavorite: (params = {}) => {
+    const queryParams = { ...params, embed: params.embed || "page=1" };
+    return api.get(API_ENDPOINTS.FAVORITE.GET_FAVORITE, {
+      params: queryParams,
+    });
+  },
+
+  deleteFavorite: (id, embed = {}) => {
+    api.delete(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), {
+      params: { embed },
+    });
+  },
 
   create: (postData, pictures = []) => {
     const formData = new FormData();
@@ -95,7 +116,10 @@ export const postsService = {
   delete: (ids) =>
     api.delete(`/posts/${Array.isArray(ids) ? ids.join(",") : ids}`),
 
-  archive: (id) => postsService.update(id, { archived: 1 }),
+  archive: (id, payload) => {
+    return api.put(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), payload);
+  },
+
   unarchive: (id) => postsService.update(id, { archived: 0 }),
 };
 
