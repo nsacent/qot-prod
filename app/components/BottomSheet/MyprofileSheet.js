@@ -4,6 +4,7 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { View, Text, TouchableOpacity, Image, StyleSheet } from "react-native";
 import BottomSheet, {
@@ -23,6 +24,8 @@ const MyprofileSheet = (props, ref) => {
   const bottomSheetRef = useRef(null);
   const { colors } = useTheme();
 
+  const [item, setItem] = useState(null); // ⬅️ Hold the passed item
+
   const handleSheetChanges = useCallback((index) => {
     console.log("BottomSheet index changed to", index);
   }, []);
@@ -39,12 +42,15 @@ const MyprofileSheet = (props, ref) => {
     []
   );
 
-  const openSheet = useCallback(() => {
+  // ⬅️ openSheet now accepts an item
+  const openSheet = useCallback((data) => {
+    setItem(data);
     bottomSheetRef.current?.snapToIndex(0);
   }, []);
 
   useImperativeHandle(ref, () => ({
     openSheet,
+    close: () => bottomSheetRef.current?.close(), // ⬅️ This line is key
   }));
 
   const renderAction = (icon, label, color, onPress, i) => (
@@ -52,7 +58,7 @@ const MyprofileSheet = (props, ref) => {
       key={`sheet-action-${i}`}
       style={styles.row}
       activeOpacity={0.7}
-      onPress={onPress}
+      onPress={() => onPress(item)} // ⬅️ Pass item to action
     >
       <Image style={[styles.icon, { tintColor: color }]} source={icon} />
       <Text style={[styles.label, { color }]}>{label}</Text>

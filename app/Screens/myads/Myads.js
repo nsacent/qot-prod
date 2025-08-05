@@ -275,7 +275,6 @@ const Myads = ({ navigation }) => {
   const handleDelete = async (adId) => {
     try {
       setDeletingIds((prev) => [...prev, adId]); // Add to deleting array
-
       await postsService.posts.delete(adId);
       setAds((prev) => prev.filter((item) => item.id !== adId));
     } catch (err) {
@@ -306,7 +305,6 @@ const Myads = ({ navigation }) => {
       setDeletingIds((prev) => [...prev, item.id]);
 
       const now = new Date().toISOString();
-
       const payload = {
         category_id: item.category_id,
         post_type_id: item.post_type_id,
@@ -320,7 +318,7 @@ const Myads = ({ navigation }) => {
         archived_manually_at: now,
       };
 
-      const response = await postsService.posts.archive(item.id, payload);
+      const response = await postsService.posts.toggleArchive(item.id, payload);
 
       if (response?.data?.success) {
         setAds((prev) => prev.filter((ad) => ad.id !== item.id));

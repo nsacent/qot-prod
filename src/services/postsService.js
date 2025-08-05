@@ -116,11 +116,9 @@ export const postsService = {
   delete: (ids) =>
     api.delete(`/posts/${Array.isArray(ids) ? ids.join(",") : ids}`),
 
-  archive: (id, payload) => {
+  toggleArchive: (id, payload) => {
     return api.put(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), payload);
   },
-
-  unarchive: (id) => postsService.update(id, { archived: 0 }),
 };
 
 export default {

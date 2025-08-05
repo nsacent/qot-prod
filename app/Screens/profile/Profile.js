@@ -6,10 +6,10 @@ import {
   Image,
   TouchableOpacity,
   Share,
-  Animated,
   Platform,
   RefreshControl,
   ScrollView as RNScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
@@ -19,7 +19,6 @@ import { ScrollView } from "react-native-gesture-handler";
 import { AuthContext } from "../../context/AuthProvider";
 import { format } from "date-fns";
 import MyprofileSheet from "../../components/BottomSheet/MyprofileSheet";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiService } from "../../../src/services/api";
 import { Skeleton } from "moti/skeleton";
 import postsService from "../../../src/services/postsService";
@@ -33,9 +32,9 @@ const Profile = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [miniStats, setMiniStats] = useState([]);
+  const [deletingIds, setDeletingIds] = useState([]); // id of the ad being deleted
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const scrollX = useRef(new Animated.Value(0)).current;
   const moresheetPending = useRef();
   const moresheetArchived = useRef();
   const theme = useTheme();
@@ -46,13 +45,19 @@ const Profile = ({ navigation }) => {
       icon: IMAGES.delete,
       label: "Delete",
       color: "red",
-      onPress: (item) => handleDeleteAd(item.id),
+      onPress: (item) => {
+        moresheetPending.current?.close(); // ← CLOSE the sheet
+        handleDeleteAd(item.id, "pending"); // ← Then delete
+      },
     },
     {
       icon: IMAGES.write,
       label: "Edit",
       color: colors.title,
-      onPress: (item) => handleEditAd(item.id),
+      onPress: (item) => {
+        moresheetPending.current?.close();
+        handleEditAd(item.id, "pending");
+      },
     },
   ];
 
@@ -61,19 +66,28 @@ const Profile = ({ navigation }) => {
       icon: IMAGES.delete,
       label: "Delete",
       color: "red",
-      onPress: (item) => handleDeleteAd(item.id),
+      onPress: (item) => {
+        moresheetArchived.current?.close();
+        handleDeleteAd(item.id, "archived");
+      },
     },
     {
       icon: IMAGES.verified,
       label: "UnArchive",
       color: colors.title,
-      onPress: (item) => handleUnarchiveAd(item.id),
+      onPress: (item) => {
+        moresheetArchived.current?.close();
+        handleUnarchiveAd(item, "archived");
+      },
     },
     {
       icon: IMAGES.write,
       label: "Edit",
       color: colors.title,
-      onPress: (item) => handleEditAd(item.id),
+      onPress: (item) => {
+        moresheetArchived.current?.close();
+        handleEditAd(item.id, "archived");
+      },
     },
   ];
 
@@ -108,12 +122,6 @@ const Profile = ({ navigation }) => {
     fetchUserMiniStats(userData.id);
     fetchAds();
   };
-
-  const slideIndicator = scrollX.interpolate({
-    inputRange: [0, SIZES.width],
-    outputRange: [0, (SIZES.width - 30) / 2],
-    extrapolate: "clamp",
-  });
 
   const onPressTouch = (val) => {
     setCurrentIndex(val);
@@ -171,25 +179,81 @@ const Profile = ({ navigation }) => {
     }
   };
 
-  const handleUnarchiveAd = async (id) => {
+  const handleUnarchiveAd = async (item, tab = "archived") => {
+    if (!item?.id) return;
+
     try {
-      console.log("Hanndle Unarchieve Reached", id);
-      await postsService.posts.unarchive(id);
-      fetchAds();
-      setRefreshing(false);
+      setDeletingIds((prev) => [...prev, item.id]); // ✅ correct for array
+
+      const payload = {
+        category_id: item.category_id,
+        post_type_id: item.post_type_id,
+        title: item.title,
+        description: item.description,
+        contact_name: item.contact_name || item.name || "Unknown",
+        city_id: item.city_id,
+        email: item.email,
+        price: item.price,
+        archived_at: null,
+        archived_manually_at: null,
+        reviewed_at: null, // Reset reviewed_at
+        // Add any other fields you need to reset
+      };
+
+      const response = await postsService.posts.toggleArchive(item.id, payload);
+
+      if (response?.data?.success) {
+        if (tab === "archived") {
+          setArchivedAds((prev) => prev?.filter((ad) => ad.id !== item.id));
+        } else {
+          setPendingAds((prev) => prev?.filter((ad) => ad.id !== item.id));
+        }
+      } else {
+        console.warn(
+          "Failed to unarchive:",
+          response?.data?.message || "Unknown error"
+        );
+        alert("Failed to unarchive this post.");
+      }
     } catch (error) {
-      console.error("Error unarchiving ad:", error);
+      console.error("Unarchive error:", error);
+      alert("An error occurred while unarchiving.");
+    } finally {
+      setDeletingIds((prev) => prev.filter((id) => id !== item.id));
     }
   };
 
-  const handleDeleteAd = async (id) => {
+  const handleDeleteAd = async (adId, type = "pending") => {
+    if (!adId) return;
+
     try {
-      console.log("Hanndle Delete Reached", id);
-      // await apiService.posts.delete(id);
-      setRefreshing(false);
-      //fetchAds();
+      // Start spinner
+      setDeletingIds((prev) => [...prev, adId]);
+
+      const response = await postsService.posts.delete(adId);
+
+      // Check for successful response
+      if (response?.data?.success) {
+        if (type === "pending") {
+          setPendingAds((prev) => prev?.filter((item) => item.id !== adId));
+        } else if (type === "archived") {
+          setArchivedAds((prev) => prev?.filter((item) => item.id !== adId));
+        } else {
+          console.warn("Unknown delete type:", type);
+        }
+      } else {
+        alert("Failed to delete the ad.");
+        console.warn(
+          "Delete failed:",
+          response?.data?.message || "Unknown error"
+        );
+      }
     } catch (error) {
       console.error("Error deleting ad:", error);
+      alert("An error occurred while deleting the ad.");
+    } finally {
+      // Stop spinner
+      setDeletingIds((prev) => prev.filter((id) => id !== adId));
     }
   };
 
@@ -323,21 +387,34 @@ const Profile = ({ navigation }) => {
               </Text>
             </View>
           </View>
+
           <TouchableOpacity
-            onPress={
-              isPending
-                ? () => moresheetPending.current.openSheet(data)
-                : () => moresheetArchived.current.openSheet(data)
-            }
+            onPress={() => {
+              if (!deletingIds.includes(data.id)) {
+                isPending
+                  ? moresheetPending.current?.openSheet(data)
+                  : moresheetArchived.current?.openSheet(data);
+              }
+            }}
             style={[
               GlobalStyleSheet.background,
-              { marginRight: 5, height: 40, width: 40 },
+              {
+                marginRight: 5,
+                height: 40,
+                width: 40,
+                justifyContent: "center",
+                alignItems: "center",
+              },
             ]}
           >
-            <Image
-              style={{ height: 20, width: 20, tintColor: colors.title }}
-              source={IMAGES.more}
-            />
+            {deletingIds.includes(data.id) ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <Image
+                style={{ height: 20, width: 20, tintColor: colors.title }}
+                source={IMAGES.more}
+              />
+            )}
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -684,17 +761,16 @@ const Profile = ({ navigation }) => {
                   Archived Ads
                 </Text>
               </TouchableOpacity>
-              <Animated.View
+              <View
                 style={{
                   backgroundColor: COLORS.primary,
                   width: "50%",
                   height: 3,
                   position: "absolute",
                   bottom: 0,
-                  left: 0,
-                  transform: [{ translateX: slideIndicator }],
+                  left: currentIndex === 0 ? 0 : "50%",
                 }}
-              ></Animated.View>
+              />
             </View>
           </View>
 
@@ -729,119 +805,63 @@ const Profile = ({ navigation }) => {
                 { padding: 0 },
               ]}
             >
-              <ScrollView
-                horizontal
-                scrollEventThrottle={16}
-                showsHorizontalScrollIndicator={false}
-                pagingEnabled
-                ref={scrollRef}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                  { useNativeDriver: false }
-                )}
-                onMomentumScrollEnd={(e) => {
-                  const offsetX = e.nativeEvent.contentOffset.x;
-                  if (Math.round(offsetX) === Math.round(SIZES.width)) {
-                    setCurrentIndex(1);
-                  } else if (Math.round(offsetX) === 0) {
-                    setCurrentIndex(0);
-                  } else {
-                    setCurrentIndex(0);
-                  }
-                }}
-              >
-                {/* Pending Ads Tab */}
-                <View
-                  style={{
-                    marginTop: 20,
-                    width:
-                      SIZES.width > SIZES.container
-                        ? SIZES.container
-                        : SIZES.width,
-                    flex: 1,
-                  }}
-                >
-                  <ScrollView showsVerticalScrollIndicator={false}>
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        flex: 1,
-                        paddingBottom: 80,
-                      }}
-                    >
-                      {loading ? (
-                        Array(5)
-                          .fill(null)
-                          .map((_, i) => (
-                            <React.Fragment key={`skel-pending-${i}`}>
-                              {renderSkeletonAd()}
-                            </React.Fragment>
-                          ))
-                      ) : pendingAds.length > 0 ? (
-                        pendingAds.map((data) => renderAdItem(data, true))
-                      ) : (
-                        <View
-                          style={{
-                            alignItems: "center",
-                            justifyContent: "center",
-                            padding: 20,
-                          }}
-                        >
-                          <Text style={{ color: colors.text }}>
-                            No pending ads found
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </ScrollView>
-                </View>
-
-                {/* Archived Ads Tab */}
-                <View
-                  style={{
-                    marginTop: 20,
-                    width:
-                      SIZES.width > SIZES.container
-                        ? SIZES.container
-                        : SIZES.width,
-                    flex: 1,
-                  }}
-                >
-                  <ScrollView showsVerticalScrollIndicator={false}>
-                    <View
-                      style={{
-                        paddingHorizontal: 10,
-                        flex: 1,
-                        paddingBottom: 80,
-                      }}
-                    >
-                      {loading ? (
-                        Array(3)
-                          .fill(null)
-                          .map((_, i) => (
-                            <React.Fragment key={`skel-archived-${i}`}>
-                              {renderSkeletonAd()}
-                            </React.Fragment>
-                          ))
-                      ) : archivedAds.length > 0 ? (
-                        archivedAds.map((data) => renderAdItem(data, false))
-                      ) : (
-                        <View
-                          style={{
-                            alignItems: "center",
-                            justifyContent: "center",
-                            padding: 20,
-                          }}
-                        >
-                          <Text style={{ color: colors.text }}>
-                            No archived ads found
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </ScrollView>
-                </View>
-              </ScrollView>
+              {currentIndex === 0 ? (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={{ paddingHorizontal: 10, paddingBottom: 80 }}>
+                    {loading ? (
+                      Array(5)
+                        .fill(null)
+                        .map((_, i) => (
+                          <React.Fragment key={`skel-pending-${i}`}>
+                            {renderSkeletonAd()}
+                          </React.Fragment>
+                        ))
+                    ) : pendingAds.length > 0 ? (
+                      pendingAds.map((data) => renderAdItem(data, true))
+                    ) : (
+                      <View
+                        style={{
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 20,
+                        }}
+                      >
+                        <Text style={{ color: colors.text }}>
+                          No pending ads found
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  <View style={{ paddingHorizontal: 10, paddingBottom: 80 }}>
+                    {loading ? (
+                      Array(3)
+                        .fill(null)
+                        .map((_, i) => (
+                          <React.Fragment key={`skel-archived-${i}`}>
+                            {renderSkeletonAd()}
+                          </React.Fragment>
+                        ))
+                    ) : archivedAds.length > 0 ? (
+                      archivedAds.map((data) => renderAdItem(data, false))
+                    ) : (
+                      <View
+                        style={{
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 20,
+                        }}
+                      >
+                        <Text style={{ color: colors.text }}>
+                          No archived ads found
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+              )}
             </View>
           )}
         </SafeAreaView>
