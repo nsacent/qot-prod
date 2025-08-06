@@ -7,17 +7,16 @@ import {
   TouchableOpacity,
   Text,
   Share,
-  StyleSheet,
   Platform,
   ActivityIndicator,
   Linking,
+  RefreshControl,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import FeatherIcon from "react-native-vector-icons/Feather";
 import Swiper from "react-native-swiper";
 import { COLORS, FONTS, IMAGES, SIZES } from "../../constants/theme";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
-import { LinearGradient } from "expo-linear-gradient";
 import ButtonLight from "../../components/Button/ButtonLight";
 import LatestAds from "../Home/LatestAds";
 import ButtonOutline from "../../components/Button/ButtonOutline";
@@ -41,6 +40,7 @@ const ItemDetails = ({ navigation, route }) => {
   const [isLiked, setIsLiked] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [similarItems, setSimilarItems] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Fetch item details
   useEffect(() => {
@@ -56,14 +56,16 @@ const ItemDetails = ({ navigation, route }) => {
 
         // Fetch item details with embedded relationships
         const itemResponse = await axios.get(
-          `${API_BASE_URL}/posts/${itemId}?embed={user,postType,city,pictures,savedByLoggedUser,category}`,
+          `${API_BASE_URL}/posts/${itemId}?detailed=1`,
           { headers }
         );
 
         const itemData = itemResponse.data.result;
+        const itemExtra = itemResponse.data.extra;
 
         setItem({
           ...itemData,
+          ...itemExtra,
           priceFormatted:
             itemData.price_formatted ||
             formatPrice(itemData.price, itemData.currency_code),
@@ -104,6 +106,12 @@ const ItemDetails = ({ navigation, route }) => {
 
     fetchItemDetails();
   }, [itemId, userToken]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchItemDetails(); // Move fetch function out of useEffect
+    setRefreshing(false);
+  };
 
   const formatPrice = (price, currencyCode) => {
     const amount = parseFloat(price || 0);
@@ -205,40 +213,69 @@ const ItemDetails = ({ navigation, route }) => {
 
   // Render car specifications from fieldsValues
   const renderSpecifications = () => {
-    if (!item.extra?.fieldsValues) return null;
+    const fields = item?.fieldsValues;
 
-    const specs = [];
-    for (const key in item.extra.fieldsValues) {
-      const field = item.extra.fieldsValues[key];
-      specs.push(
-        <View key={field.id} style={{ flexDirection: "row", marginBottom: 5 }}>
-          <Text
-            style={[
-              FONTS.fontXs,
-              { color: colors.title, fontWeight: "bold", width: 150 },
-            ]}
-          >
-            {field.name}:
-          </Text>
-          <Text style={[FONTS.fontXs, { color: colors.text }]}>
-            {field.value}
-          </Text>
-        </View>
-      );
-    }
+    if (!Array.isArray(fields) || fields.length === 0) return null;
 
     return (
-      <View style={{ marginTop: 15 }}>
+      <View
+        style={{
+          width: "100%",
+          borderWidth: 1,
+          borderRadius: 10,
+          borderColor: colors.borderColor,
+          padding: 15,
+          marginTop: 20,
+        }}
+      >
         <Text
           style={[
             FONTS.fontSm,
             FONTS.fontMedium,
-            { color: colors.title, marginBottom: 8 },
+            { color: colors.title, marginBottom: 10 },
           ]}
         >
           Specifications
         </Text>
-        {specs}
+
+        {fields.map((field) => {
+          let displayValue;
+
+          if (typeof field.value === "object" && field.value !== null) {
+            // Join values for checkbox_multiple fields
+            displayValue = Object.values(field.value).join(", ");
+          } else {
+            displayValue = String(field.value);
+          }
+
+          return (
+            <View
+              key={field.id}
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <Text
+                style={[
+                  FONTS.fontXs,
+                  { color: colors.title, fontWeight: "bold", width: "45%" },
+                ]}
+              >
+                {field.name}
+              </Text>
+              <Text
+                style={[
+                  FONTS.fontXs,
+                  { color: colors.text, width: "50%", textAlign: "right" },
+                ]}
+              >
+                {displayValue}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     );
   };
@@ -246,7 +283,16 @@ const ItemDetails = ({ navigation, route }) => {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
       <View style={{ flex: 1 }}>
-        <ScrollView>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
+        >
           {/* Image Swiper */}
           <View
             style={{
@@ -392,7 +438,7 @@ const ItemDetails = ({ navigation, route }) => {
                   justifyContent: "space-around",
                 }}
               >
-                {item.visits && (
+                {!!item.visits && (
                   <View style={{ alignItems: "center" }}>
                     <View
                       style={{

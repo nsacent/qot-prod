@@ -968,14 +968,6 @@ const Myads = ({ navigation }) => {
               />
             ) : null
           }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.primary]}
-              tintColor={COLORS.primary}
-            />
-          }
         />
       ) : (
         <Text
@@ -1022,6 +1014,14 @@ const Myads = ({ navigation }) => {
             horizontal
             scrollEventThrottle={16}
             showsHorizontalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
+              />
+            }
             pagingEnabled
             ref={scrollRef}
             onScroll={Animated.event(
