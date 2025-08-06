@@ -51,7 +51,7 @@ export const postsService = {
       params: { embed },
     }),
 
-  getFavorite: (params = {}) => {
+  getFavorite: (params = { embed: "{post,city,pictures,user}" }) => {
     const queryParams = { ...params, embed: params.embed || "page=1" };
     return api.get(API_ENDPOINTS.FAVORITE.GET_FAVORITE, {
       params: queryParams,

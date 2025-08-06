@@ -24,7 +24,6 @@ import { getCityName, preloadCities } from "../../../src/services/cityService";
 import { Skeleton } from "moti/skeleton";
 import postsService from "../../../src/services/postsService";
 import ConfirmModal from "../../components/Modal/ConfirmModal";
-import api from "../../../src/services/api";
 
 const Myads = ({ navigation }) => {
   const { userToken } = useContext(AuthContext);
@@ -91,9 +90,15 @@ const Myads = ({ navigation }) => {
     let savedResponse;
 
     try {
-      savedResponse = await postsService.posts.getFavorite({ page });
+      savedResponse = await postsService.posts.getFavorite({
+        page,
+      });
 
-      if (!savedResponse || !savedResponse.data || !savedResponse.data.result) {
+      if (
+        !savedResponse ||
+        !savedResponse.data ||
+        !savedResponse.data?.result
+      ) {
         console.error("Invalid response structure from getFavorite");
         return { data: { result: { data: [] } } };
       }
@@ -570,7 +575,7 @@ const Myads = ({ navigation }) => {
             marginBottom: 20,
           },
         ]}
-        onPress={() => navigation.navigate("ItemDetails", { id: item.id })}
+        onPress={() => navigation.navigate("ItemDetails", { itemId: item.id })}
       >
         <View style={{ flexDirection: "row" }}>
           <View style={{ flexDirection: "row", flex: 1 }}>
@@ -1053,7 +1058,6 @@ const Myads = ({ navigation }) => {
           onArchive={() => {
             console.log("Archive", selectedItem);
             handleArchive(selectedItem); // ✅ fixed
-            //moresheet.current?.close(); // ✅ close after archive
           }}
         />
       </SafeAreaView>
