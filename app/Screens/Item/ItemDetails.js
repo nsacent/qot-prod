@@ -25,6 +25,8 @@ import { AuthContext } from "../../context/AuthProvider";
 import axios from "axios";
 import LikeBtn from "../../components/LikeBtn";
 import MapView, { Marker } from "react-native-maps";
+import FontAwesome from "react-native-vector-icons/FontAwesome";
+import getSpecIcon from "../../../src/utils/getSpecIcon";
 
 const API_BASE_URL = "https://qot.ug/api";
 
@@ -37,7 +39,6 @@ const ItemDetails = ({ navigation, route }) => {
   // States
   const [loading, setLoading] = useState(true);
   const [item, setItem] = useState(null);
-  const [isLiked, setIsLiked] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [similarItems, setSimilarItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,9 +79,6 @@ const ItemDetails = ({ navigation, route }) => {
             }
           ),
         });
-
-        // Set liked status
-        setIsLiked(itemData.savedByLoggedUser || false);
 
         // Fetch similar items from same category
         if (itemData.category_id) {
@@ -211,72 +209,239 @@ const ItemDetails = ({ navigation, route }) => {
       ? [{ uri: item.picture.url.large }]
       : [{ uri: null }]; // fallback to avoid undefined
 
-  // Render car specifications from fieldsValues
-  const renderSpecifications = () => {
-    const fields = item?.fieldsValues;
+  const renderCategoryHierarchy = (category) => {
+    const hierarchy = [];
+    let current = category;
+    while (current) {
+      hierarchy.unshift(current.name); // add name to start of array
+      current = current.parent; // move up the hierarchy
+    }
 
-    if (!Array.isArray(fields) || fields.length === 0) return null;
+    return hierarchy.join(" > ");
+  };
+
+  // Render car specifications from fieldsValues
+
+  const renderSpecifications = () => {
+    const rawFields = item?.fieldsValues;
+
+    // Convert object to array
+    const fields = rawFields
+      ? Object.values(rawFields).filter(
+          (field) =>
+            field.name.toLowerCase() !== "features" &&
+            field.value !== null &&
+            field.value !== ""
+        )
+      : [];
+
+    if (fields.length === 0) return null;
+
+    // Single spec layout
+    if (fields.length === 1) {
+      const field = fields[0];
+      const displayValue =
+        typeof field.value === "object"
+          ? Object.values(field.value).join(", ")
+          : String(field.value);
+
+      return (
+        <>
+          <Text
+            style={[
+              FONTS.fontSm,
+              FONTS.fontMedium,
+              { color: colors.title, marginBottom: 10, marginTop: 20 },
+            ]}
+          >
+            Specifications
+          </Text>
+          <View
+            style={{
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: colors.border,
+              padding: 15,
+              backgroundColor: colors.card,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+              <FontAwesome
+                name={getSpecIcon(field.name)}
+                size={14}
+                color={COLORS.primary}
+                style={{ marginTop: 2, marginRight: 8 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    FONTS.fontXs,
+                    FONTS.fontMedium,
+                    { color: colors.title },
+                  ]}
+                >
+                  {field.name}
+                </Text>
+                <Text
+                  style={[FONTS.fontXs, { color: colors.text, marginTop: 2 }]}
+                >
+                  {displayValue}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </>
+      );
+    }
+
+    // Multiple specs layout
+    const rows = [];
+    for (let i = 0; i < fields.length; i += 2) {
+      rows.push([fields[i], fields[i + 1]]);
+    }
 
     return (
-      <View
-        style={{
-          width: "100%",
-          borderWidth: 1,
-          borderRadius: 10,
-          borderColor: colors.borderColor,
-          padding: 15,
-          marginTop: 20,
-        }}
-      >
+      <>
         <Text
           style={[
             FONTS.fontSm,
             FONTS.fontMedium,
-            { color: colors.title, marginBottom: 10 },
+            { color: colors.title, marginBottom: 10, marginTop: 20 },
           ]}
         >
           Specifications
         </Text>
-
-        {fields.map((field) => {
-          let displayValue;
-
-          if (typeof field.value === "object" && field.value !== null) {
-            // Join values for checkbox_multiple fields
-            displayValue = Object.values(field.value).join(", ");
-          } else {
-            displayValue = String(field.value);
-          }
-
-          return (
+        <View
+          style={{
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 15,
+            backgroundColor: colors.card,
+          }}
+        >
+          {rows.map((pair, rowIndex) => (
             <View
-              key={field.id}
+              key={rowIndex}
               style={{
                 flexDirection: "row",
                 justifyContent: "space-between",
-                marginBottom: 8,
+                marginBottom: 12,
               }}
             >
-              <Text
-                style={[
-                  FONTS.fontXs,
-                  { color: colors.title, fontWeight: "bold", width: "45%" },
-                ]}
-              >
-                {field.name}
-              </Text>
-              <Text
-                style={[
-                  FONTS.fontXs,
-                  { color: colors.text, width: "50%", textAlign: "right" },
-                ]}
-              >
-                {displayValue}
-              </Text>
+              {pair.map((field, colIndex) => {
+                if (!field) return <View key={colIndex} style={{ flex: 1 }} />;
+
+                const displayValue =
+                  typeof field.value === "object"
+                    ? Object.values(field.value).join(", ")
+                    : String(field.value);
+
+                return (
+                  <View
+                    key={colIndex}
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      marginRight: colIndex === 0 ? 10 : 0,
+                    }}
+                  >
+                    <FontAwesome
+                      name={getSpecIcon(field.name)}
+                      size={14}
+                      color={COLORS.primary}
+                      style={{ marginTop: 2, marginRight: 8 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          FONTS.fontXs,
+                          FONTS.fontMedium,
+                          { color: colors.title },
+                        ]}
+                      >
+                        {field.name}
+                      </Text>
+                      <Text
+                        style={[
+                          FONTS.fontXs,
+                          { color: colors.text, marginTop: 2 },
+                        ]}
+                      >
+                        {displayValue}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          );
-        })}
-      </View>
+          ))}
+        </View>
+      </>
+    );
+  };
+
+  const renderFeatures = () => {
+    if (!Array.isArray(item?.fieldsValues)) return null;
+
+    const featuresField = item.fieldsValues.find(
+      (field) => field.name.toLowerCase() === "features"
+    );
+
+    if (!featuresField || !featuresField.value) return null;
+
+    const features = Object.values(featuresField.value);
+
+    return (
+      <>
+        <Text
+          style={[
+            FONTS.fontSm,
+            FONTS.fontMedium,
+            { color: colors.title, marginBottom: 10, marginTop: 20 },
+          ]}
+        >
+          Features
+        </Text>
+
+        <View
+          style={{
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 15,
+            backgroundColor: colors.card,
+          }}
+        >
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {features.map((feature, index) => (
+              <View
+                key={index}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "rgba(0,0,0,0.05)",
+                  borderRadius: 8,
+                  paddingVertical: 5,
+                  paddingHorizontal: 10,
+                  margin: 5,
+                }}
+              >
+                <FontAwesome
+                  name="check-circle"
+                  size={14}
+                  color={COLORS.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                  {feature}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </>
     );
   };
 
@@ -405,19 +570,24 @@ const ItemDetails = ({ navigation, route }) => {
               style={[
                 FONTS.h6,
                 FONTS.fontMedium,
-                { color: colors.title, marginBottom: 4 },
+                { color: colors.title, marginBottom: 2 },
               ]}
             >
               {item.title}
             </Text>
-            {item.excerpt && (
-              <Text
-                style={[FONTS.fontXs, { color: colors.text, marginBottom: 10 }]}
-              >
-                {item.excerpt}
-              </Text>
+            {item.category && (
+              <View style={{ marginTop: 0, marginBottom: 8 }}>
+                <Text style={[FONTS.fontXs, { color: colors.text }]}>
+                  {renderCategoryHierarchy(item.category)}
+                </Text>
+              </View>
             )}
-            <Text style={[FONTS.h5, { color: colors.title, marginBottom: 10 }]}>
+            <Text
+              style={[
+                FONTS.h5,
+                { color: COLORS.primary, marginBottom: 10, fontSize: 25 },
+              ]}
+            >
               {item.price_formatted}
             </Text>
 
@@ -427,7 +597,7 @@ const ItemDetails = ({ navigation, route }) => {
                 width: "100%",
                 borderWidth: 1,
                 borderRadius: 10,
-                borderColor: colors.borderColor,
+                borderColor: colors.border,
                 padding: 15,
               }}
             >
@@ -453,11 +623,22 @@ const ItemDetails = ({ navigation, route }) => {
                         color={colors.title}
                         style={{ opacity: 0.5 }}
                       />
-                      <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                      <Text
+                        style={[
+                          FONTS.fontXs,
+                          FONTS.fontMedium,
+                          { color: colors.title },
+                        ]}
+                      >
                         Views
                       </Text>
                     </View>
-                    <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                    <Text
+                      style={[
+                        FONTS.fontXs,
+                        { color: colors.text, marginTop: 2 },
+                      ]}
+                    >
                       {item.visits}
                     </Text>
                   </View>
@@ -477,11 +658,22 @@ const ItemDetails = ({ navigation, route }) => {
                         color={colors.title}
                         style={{ opacity: 0.5 }}
                       />
-                      <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                      <Text
+                        style={[
+                          FONTS.fontXs,
+                          FONTS.fontMedium,
+                          { color: colors.title },
+                        ]}
+                      >
                         Location
                       </Text>
                     </View>
-                    <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                    <Text
+                      style={[
+                        FONTS.fontXs,
+                        { color: colors.text, marginTop: 2 },
+                      ]}
+                    >
                       {item.city.name}
                     </Text>
                   </View>
@@ -501,11 +693,22 @@ const ItemDetails = ({ navigation, route }) => {
                         color={colors.title}
                         style={{ opacity: 0.5 }}
                       />
-                      <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                      <Text
+                        style={[
+                          FONTS.fontXs,
+                          FONTS.fontMedium,
+                          { color: colors.title },
+                        ]}
+                      >
                         Posted
                       </Text>
                     </View>
-                    <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                    <Text
+                      style={[
+                        FONTS.fontXs,
+                        { color: colors.text, marginTop: 2 },
+                      ]}
+                    >
                       {item.created_at_formatted}
                     </Text>
                   </View>
@@ -513,6 +716,10 @@ const ItemDetails = ({ navigation, route }) => {
               </View>
             </View>
 
+            {/* Specifications */}
+            {renderSpecifications()}
+            {/* Features */}
+            {renderFeatures()}
             {/* Description */}
             <Text
               style={[
@@ -523,6 +730,7 @@ const ItemDetails = ({ navigation, route }) => {
             >
               Description
             </Text>
+
             <View
               style={{
                 backgroundColor: "rgba(0,0,0,.05)",
@@ -538,9 +746,6 @@ const ItemDetails = ({ navigation, route }) => {
                 {item.description || "No description provided"}
               </Text>
             </View>
-
-            {/* Specifications */}
-            {renderSpecifications()}
           </View>
 
           {/* Seller Info */}
@@ -666,6 +871,10 @@ const ItemDetails = ({ navigation, route }) => {
                       latitudeDelta: 0.02,
                       longitudeDelta: 0.02,
                     }}
+                    scrollEnabled={false}
+                    zoomEnabled={false}
+                    rotateEnabled={false}
+                    pitchEnabled={false}
                   >
                     <Marker
                       coordinate={{

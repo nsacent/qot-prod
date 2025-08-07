@@ -277,7 +277,7 @@ const Profile = ({ navigation }) => {
             marginBottom: 20,
           },
         ]}
-        onPress={() => navigation.navigate("ItemDetails", { postId: data.id })}
+        onPress={() => navigation.navigate("ItemDetails", { itemId: data.id })}
       >
         <View
           style={{
