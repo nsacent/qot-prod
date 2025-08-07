@@ -21,10 +21,10 @@ import ButtonLight from "../../components/Button/ButtonLight";
 import LatestAds from "../Home/LatestAds";
 import ButtonOutline from "../../components/Button/ButtonOutline";
 import Button from "../../components/Button/Button";
-import Anotherprofile from "../profile/Anotherprofile";
 import { AuthContext } from "../../context/AuthProvider";
 import axios from "axios";
 import LikeBtn from "../../components/LikeBtn";
+import MapView, { Marker } from "react-native-maps";
 
 const API_BASE_URL = "https://qot.ug/api";
 
@@ -556,12 +556,14 @@ const ItemDetails = ({ navigation, route }) => {
               <View>
                 {item.user?.photo_url ? (
                   <Image
-                    style={{ height: 75, width: 75, borderRadius: 15 }}
-                    source={{ uri: item.user.photo_url }}
+                    style={{ height: 100, width: 100, borderRadius: 15 }}
+                    source={{
+                      uri: `${item.user?.photo_url}?t=${new Date().getTime()}`,
+                    }}
                   />
                 ) : (
                   <Image
-                    style={{ height: 75, width: 75, borderRadius: 15 }}
+                    style={{ height: 100, width: 100, borderRadius: 15 }}
                     source={IMAGES.Small5}
                   />
                 )}
@@ -613,18 +615,16 @@ const ItemDetails = ({ navigation, route }) => {
           <View style={GlobalStyleSheet.container}>
             <View
               style={{
-                flexDirection: "row",
                 borderBottomWidth: 1,
                 borderBottomColor: colors.border,
                 paddingBottom: 20,
-                alignItems: "center",
-                justifyContent: "space-between",
               }}
             >
-              <View style={{ alignItems: "flex-start" }}>
+              {/* Location Info */}
+              <View style={{ alignItems: "flex-start", marginBottom: 15 }}>
                 {item.city?.name && (
                   <View
-                    style={{ flexDirection: "row", gap: 10, marginBottom: 30 }}
+                    style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}
                   >
                     <FeatherIcon
                       name="map-pin"
@@ -634,22 +634,59 @@ const ItemDetails = ({ navigation, route }) => {
                     <Text style={[FONTS.font, { color: colors.title }]}>
                       {item.city.name}
                     </Text>
+
+                    <Text
+                      style={[
+                        FONTS.font,
+                        FONTS.fontMedium,
+                        { color: colors.title },
+                      ]}
+                    >
+                      Ad ID: {item.id}
+                    </Text>
                   </View>
                 )}
-                <View>
-                  <Text style={[FONTS.font, { color: colors.title }]}>
-                    Ad ID: {item.id}
-                  </Text>
+              </View>
+
+              {/* Small Map */}
+              {item.city?.latitude && item.city?.longitude && (
+                <View
+                  style={{
+                    height: 150,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    marginBottom: 15,
+                  }}
+                >
+                  <MapView
+                    style={{ flex: 1 }}
+                    initialRegion={{
+                      latitude: parseFloat(item.city.latitude),
+                      longitude: parseFloat(item.city.longitude),
+                      latitudeDelta: 0.02,
+                      longitudeDelta: 0.02,
+                    }}
+                  >
+                    <Marker
+                      coordinate={{
+                        latitude: parseFloat(item.city.latitude),
+                        longitude: parseFloat(item.city.longitude),
+                      }}
+                      title={item.city.name}
+                    />
+                  </MapView>
                 </View>
-                <View style={{ marginTop: 10 }}>
-                  <ButtonLight
-                    onPress={handleReport}
-                    size={"sm"}
-                    title="Report Ad"
-                    color={COLORS.danger}
-                    loading={isProcessing}
-                  />
-                </View>
+              )}
+
+              {/* Report Button */}
+              <View style={{ marginTop: 10 }}>
+                <ButtonLight
+                  onPress={handleReport}
+                  size={"sm"}
+                  title="Report Ad"
+                  color={COLORS.danger}
+                  loading={isProcessing}
+                />
               </View>
             </View>
           </View>
