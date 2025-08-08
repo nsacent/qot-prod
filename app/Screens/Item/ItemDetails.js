@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import {
   View,
   SafeAreaView,
@@ -18,7 +18,6 @@ import Swiper from "react-native-swiper";
 import { COLORS, FONTS, IMAGES, SIZES } from "../../constants/theme";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import ButtonLight from "../../components/Button/ButtonLight";
-import LatestAds from "../Home/LatestAds";
 import ButtonOutline from "../../components/Button/ButtonOutline";
 import Button from "../../components/Button/Button";
 import { AuthContext } from "../../context/AuthProvider";
@@ -28,14 +27,26 @@ import MapView, { Marker } from "react-native-maps";
 import FontAwesome from "react-native-vector-icons/FontAwesome";
 import getSpecIcon from "../../../src/utils/getSpecIcon";
 import SimilarAds from "./SimilarAds";
+import ReportAdOptionsSheet from "../../components/BottomSheet/ReportAdOptionsSheet";
+import ReportMessageSheet from "../../components/BottomSheet/ReportMessageSheet";
+import RBSheet from "react-native-raw-bottom-sheet";
+import MakeOfferSheet from "../../components/BottomSheet/MakeOfferSheet";
 
 const API_BASE_URL = "https://qot.ug/api";
 
 const ItemDetails = ({ navigation, route }) => {
   const { itemId } = route.params;
-  const { userToken } = useContext(AuthContext);
+  const { userToken, userData } = useContext(AuthContext);
   const theme = useTheme();
   const { colors } = theme;
+
+  const reportOptionsRef = useRef();
+  const reportMessageRef = useRef();
+  const [selectedReason, setSelectedReason] = useState("");
+  const makeOfferRef = useRef(null);
+
+  const openReportOptions = () => reportOptionsRef.current?.expand();
+  const openMakeOffer = () => makeOfferRef.current?.open();
 
   // States
   const [loading, setLoading] = useState(true);
@@ -43,6 +54,56 @@ const ItemDetails = ({ navigation, route }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [similarItems, setSimilarItems] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  //Reports sheets and hadling
+  const handleSelectReason = (reason) => {
+    setSelectedReason(reason);
+    sheetOptionsRef.current?.close();
+    setTimeout(() => {
+      sheetFormRef.current?.expand();
+    }, 300);
+  };
+
+  const handleSubmitReport = async ({ reason, message }) => {
+    setIsSubmitting(true);
+    try {
+      // Send to API
+      await axios.post(
+        `${API_BASE_URL}/reports`,
+        {
+          post_id: item.id,
+          reason,
+          message,
+        },
+        { headers }
+      );
+
+      alert("Report submitted");
+      sheetFormRef.current?.close();
+    } catch (err) {
+      alert("Failed to submit report.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOfferSubmit = async ({ amount, message }) => {
+    // TODO: integrate with your backend.
+    // Option A (common): create/continue a thread with seller and send a message flagged as "offer"
+    // Example (pseudo):
+    //
+    // await axios.post(`${API_BASE_URL}/threads`, {
+    //   to_user_id: listing.sellerId,
+    //   post_id: listing.id,
+    //   message: `Offer ${currency}${amount}${message ? ` — ${message}` : ""}`,
+    // }, { headers });
+    //
+    // Or if you have a dedicated offers endpoint, call that instead:
+    // await axios.post(`${API_BASE_URL}/offers`, { post_id: listing.id, amount, message }, { headers });
+
+    // For now, just log it or show a toast/snackbar
+    console.log("Offer submitted", { amount, message });
+  };
 
   // Fetch item details
   useEffect(() => {
@@ -134,32 +195,16 @@ const ItemDetails = ({ navigation, route }) => {
     }
   };
 
-  const handleReport = async () => {
-    try {
-      setIsProcessing(true);
-      const headers = {
-        Authorization: `Bearer ${userToken}`,
-        "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-        "Content-Type": "application/json",
-      };
+  const handleReportSubmit = (message) => {
+    reportMessageRef.current?.close();
+    console.log("Final Report: ", { selectedReason, message });
+    // Optionally send to API here
+  };
 
-      await axios.post(
-        `${API_BASE_URL}/reports`,
-        {
-          post_id: itemId,
-          report_type: "spam",
-          message: "I want to report this item",
-        },
-        { headers }
-      );
-
-      alert("Item reported successfully");
-    } catch (error) {
-      console.error("Report error:", error);
-      alert("Failed to report item");
-    } finally {
-      setIsProcessing(false);
-    }
+  const handleReasonSelect = (reason) => {
+    setSelectedReason(reason);
+    reportOptionsRef.current?.close();
+    setTimeout(() => reportMessageRef.current?.open(), 300);
   };
 
   const handleMakeOffer = () => {
@@ -193,7 +238,13 @@ const ItemDetails = ({ navigation, route }) => {
   if (loading || !item) {
     return (
       <SafeAreaView
-        style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: colors.card, // <== add this
+          padding: 20,
+        }}
       >
         <ActivityIndicator size="large" color={COLORS.primary} />
       </SafeAreaView>
@@ -857,21 +908,26 @@ const ItemDetails = ({ navigation, route }) => {
                     Posted: {item.created_at_formatted}
                   </Text>
                 )}
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-                  <ButtonLight
-                    onPress={handleViewProfile}
-                    size={"sm"}
-                    title="See Profile"
-                  />
-                  {item.phone && (
+
+                {item.user_id !== userData?.id && (
+                  <View
+                    style={{ flexDirection: "row", gap: 10, marginTop: 10 }}
+                  >
                     <ButtonLight
-                      onPress={handleCall}
+                      onPress={handleViewProfile}
                       size={"sm"}
-                      title="Call"
-                      icon="phone"
+                      title="See Profile"
                     />
-                  )}
-                </View>
+                    {item.phone && (
+                      <ButtonLight
+                        onPress={handleCall}
+                        size={"sm"}
+                        title="Call"
+                        icon="phone"
+                      />
+                    )}
+                  </View>
+                )}
               </View>
             </View>
           </View>
@@ -950,7 +1006,7 @@ const ItemDetails = ({ navigation, route }) => {
               {/* Report Button */}
               <View style={{ marginTop: 10 }}>
                 <ButtonLight
-                  onPress={handleReport}
+                  onPress={() => reportOptionsRef.current?.open()}
                   size={"sm"}
                   title="Report Ad"
                   color={COLORS.danger}
@@ -983,7 +1039,7 @@ const ItemDetails = ({ navigation, route }) => {
             </View>
             <View style={{ flex: 1 }}>
               <Button
-                onPress={handleMakeOffer}
+                onPress={openMakeOffer}
                 title="Make Offer"
                 loading={isProcessing}
               />
@@ -991,6 +1047,47 @@ const ItemDetails = ({ navigation, route }) => {
           </View>
         </View>
       </View>
+
+      <RBSheet
+        ref={reportOptionsRef}
+        height={350}
+        openDuration={300}
+        customStyles={{
+          container: {
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            backgroundColor: colors.card, // <== fix background
+          },
+        }}
+      >
+        <ReportAdOptionsSheet onSelectReason={handleReasonSelect} />
+      </RBSheet>
+
+      <RBSheet
+        ref={reportMessageRef}
+        height={350}
+        openDuration={300}
+        customStyles={{
+          container: {
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            backgroundColor: colors.card, // <== fix background
+          },
+        }}
+      >
+        <ReportMessageSheet
+          reason={selectedReason}
+          onSubmit={handleReportSubmit}
+        />
+      </RBSheet>
+
+      <MakeOfferSheet
+        ref={makeOfferRef}
+        currency={"currency" in item ? item.currency : "UGX"}
+        min={1}
+        // max={100000} // optional cap
+        onSubmit={handleOfferSubmit}
+      />
     </SafeAreaView>
   );
 };

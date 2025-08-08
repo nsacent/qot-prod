@@ -61,26 +61,27 @@ const Anotherprofile = ({ navigation }) => {
     if (!userId) return;
     setLoadingUser(true);
     try {
-      // Get user profile
       const { data } = await axios.get(
-        `${API_BASE_URL}/users/${userId}/embed=country,userType,gender,countPostsViews,countPosts,countSavedPosts`,
-        {
-          headers,
-        }
+        `${API_BASE_URL}/users/${userId}?embed=country,userType,gender,countPostsViews,countPosts`,
+        { headers }
       );
 
-      const { dataministats } = await axios.get(
+      const { data: dataministats } = await axios.get(
         `${API_BASE_URL}/users/${userId}/stats`,
-        {
-          headers,
-        }
+        { headers }
       );
-      // API shape: data.result
-      setUser(data?.result ?? null);
-      setMiniStats(dataministats?.result ?? null);
+
+      console.log("Fetched user data:", data);
+      console.log("Fetched mini stats:", dataministats);
+
+      if (data?.result && dataministats?.result) {
+        setUser(data?.result ?? null);
+        setMiniStats(dataministats?.result ?? null);
+      }
     } catch (e) {
+      console.error("Error fetching user:", e);
       setUser(null);
-      console.warn("Fetch user error:", e?.response?.data || e?.message);
+      setMiniStats(null);
     } finally {
       setLoadingUser(false);
     }
@@ -138,9 +139,16 @@ const Anotherprofile = ({ navigation }) => {
   };
 
   const onShare = async () => {
+    let userUrl;
+    if (user?.username) {
+      userUrl = `https://qot.ug/profile/${user?.username}`;
+    } else {
+      userUrl = `https://qot.ug/users/${user?.id}/ads`;
+    }
+
     try {
       await Share.share({
-        message: `Check out this profile on QOT: https://qot.ug/users/${userId}`,
+        message: `Check out this profile on QOT: ${userUrl}`,
       });
     } catch (error) {
       alert(error.message);
@@ -322,7 +330,7 @@ const Anotherprofile = ({ navigation }) => {
                       color: COLORS.title,
                     }}
                   >
-                    {user?.posts?.visits ?? "—"}
+                    {miniStats?.posts?.visits ?? "—"}
                   </Text>
                   <Text
                     style={{
@@ -354,7 +362,7 @@ const Anotherprofile = ({ navigation }) => {
                       color: COLORS.title,
                     }}
                   >
-                    {user?.posts?.favourite ?? "—"}
+                    {miniStats?.posts?.favourite ?? "—"}
                   </Text>
                   <Text
                     style={{
@@ -377,7 +385,7 @@ const Anotherprofile = ({ navigation }) => {
             <Text
               style={{ ...FONTS.fontMedium, color: colors.title, fontSize: 16 }}
             >
-              All Post ({user?.posts?.published ?? "—"})
+              All Post ({miniStats?.posts?.published ?? "—"})
             </Text>
           </View>
 
