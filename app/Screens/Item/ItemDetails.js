@@ -27,6 +27,7 @@ import LikeBtn from "../../components/LikeBtn";
 import MapView, { Marker } from "react-native-maps";
 import FontAwesome from "react-native-vector-icons/FontAwesome";
 import getSpecIcon from "../../../src/utils/getSpecIcon";
+import SimilarAds from "./SimilarAds";
 
 const API_BASE_URL = "https://qot.ug/api";
 
@@ -208,6 +209,62 @@ const ItemDetails = ({ navigation, route }) => {
       : item.picture?.url?.large
       ? [{ uri: item.picture.url.large }]
       : [{ uri: null }]; // fallback to avoid undefined
+
+  const renderTags = () => {
+    if (!Array.isArray(item?.tags) || item.tags.length === 0) return null;
+
+    return (
+      <>
+        <Text
+          style={[
+            FONTS.fontSm,
+            FONTS.fontMedium,
+            { color: colors.title, marginBottom: 8, marginTop: 20 },
+          ]}
+        >
+          Tags
+        </Text>
+
+        <View
+          style={{
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 12,
+            backgroundColor: colors.card,
+          }}
+        >
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {item.tags.map((tag, idx) => (
+              <View
+                key={`${tag}-${idx}`}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "rgba(0,0,0,0.05)",
+                  borderRadius: 999,
+                  paddingVertical: 6,
+                  paddingHorizontal: 10,
+                  marginRight: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <FontAwesome
+                  name="tag"
+                  size={12}
+                  color={COLORS.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[FONTS.fontXs, { color: colors.title }]}>
+                  {tag}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </>
+    );
+  };
 
   const renderCategoryHierarchy = (category) => {
     const hierarchy = [];
@@ -746,6 +803,9 @@ const ItemDetails = ({ navigation, route }) => {
                 {item.description || "No description provided"}
               </Text>
             </View>
+
+            {/*Render Taga*/}
+            {renderTags()}
           </View>
 
           {/* Seller Info */}
@@ -761,7 +821,7 @@ const ItemDetails = ({ navigation, route }) => {
               <View>
                 {item.user?.photo_url ? (
                   <Image
-                    style={{ height: 100, width: 100, borderRadius: 15 }}
+                    style={{ height: 100, width: 100, borderRadius: 50 }}
                     source={{
                       uri: `${item.user?.photo_url}?t=${new Date().getTime()}`,
                     }}
@@ -901,12 +961,7 @@ const ItemDetails = ({ navigation, route }) => {
           </View>
 
           {/* Similar Items */}
-          <View style={GlobalStyleSheet.container}>
-            <Text style={[FONTS.h6, { color: colors.title, marginBottom: 10 }]}>
-              Similar Ads
-            </Text>
-            <LatestAds items={similarItems} />
-          </View>
+          <SimilarAds postId={item.id} />
         </ScrollView>
 
         {/* Bottom Buttons */}
