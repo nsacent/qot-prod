@@ -31,8 +31,7 @@ import ReportAdOptionsSheet from "../../components/BottomSheet/ReportAdOptionsSh
 import ReportMessageSheet from "../../components/BottomSheet/ReportMessageSheet";
 import RBSheet from "react-native-raw-bottom-sheet";
 import MakeOfferSheet from "../../components/BottomSheet/MakeOfferSheet";
-
-const API_BASE_URL = "https://qot.ug/api";
+import postsService from "../../../src/services/postsService";
 
 const ItemDetails = ({ navigation, route }) => {
   const { itemId } = route.params;
@@ -69,7 +68,7 @@ const ItemDetails = ({ navigation, route }) => {
     try {
       // Send to API
       await axios.post(
-        `${API_BASE_URL}/reports`,
+        `https://qot.ug/api/reports`,
         {
           post_id: item.id,
           reason,
@@ -110,18 +109,12 @@ const ItemDetails = ({ navigation, route }) => {
     const fetchItemDetails = async () => {
       try {
         setLoading(true);
-        const headers = {
-          Authorization: `Bearer ${userToken}`,
-          "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        };
 
-        // Fetch item details with embedded relationships
-        const itemResponse = await axios.get(
-          `${API_BASE_URL}/posts/${itemId}?detailed=1`,
-          { headers }
-        );
+        const itemResponse = await postsService.posts.getById(itemId, {
+          detailed: 1, // includes relationships, embed not needed
+          noCache: 1,
+          // embed is ignored when detailed=1
+        });
 
         const itemData = itemResponse.data.result;
         const itemExtra = itemResponse.data.extra;
@@ -144,16 +137,18 @@ const ItemDetails = ({ navigation, route }) => {
 
         // Fetch similar items from same category
         if (itemData.category_id) {
-          const similarResponse = await axios.get(
-            `${API_BASE_URL}/posts?category=${itemData.category_id}&perPage=4&embed=pictures`,
-            { headers }
-          );
+          const similarResponse = await postsService.posts.getAll({
+            category: itemData.category_id,
+            perPage: 4,
+            embed: "pictures",
+          });
+
           setSimilarItems(
-            similarResponse.data.result.data.map((item) => ({
+            similarResponse.data?.result?.data.map((item) => ({
               ...item,
               priceFormatted:
-                item.price_formatted ||
-                formatPrice(item.price, item.currency_code),
+                item?.price_formatted ||
+                formatPrice(item?.price, item?.currency_code),
             }))
           );
         }

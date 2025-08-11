@@ -1,10 +1,4 @@
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useContext,
-  useCallback,
-} from "react";
+import React, { useEffect, useState, useContext, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,11 +15,8 @@ import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import { COLORS, FONTS, IMAGES } from "../../constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import FeatherIcon from "react-native-vector-icons/Feather";
-import axios from "axios";
-import { AuthContext } from "../../context/AuthProvider";
-
-const API_BASE_URL = "https://qot.ug/api";
-const APP_API_TOKEN = "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=";
+import { ApiService } from "../../../src/services/api";
+import postsService from "../../../src/services/postsService";
 
 const formatPrice = (price, currencyCode) => {
   const amount = parseFloat(price ?? 0);
@@ -37,7 +28,6 @@ const formatPrice = (price, currencyCode) => {
 const Anotherprofile = ({ navigation }) => {
   const { params } = useRoute();
   const userId = params?.userId;
-  const { userToken } = useContext(AuthContext);
   const { colors } = useTheme();
 
   const [user, setUser] = useState(null);
@@ -47,33 +37,14 @@ const Anotherprofile = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [miniStats, setMiniStats] = useState([]);
 
-  const headers = useMemo(
-    () => ({
-      Authorization: userToken ? `Bearer ${userToken}` : undefined,
-      "X-AppApiToken": APP_API_TOKEN,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    }),
-    [userToken]
-  );
-
   const fetchUser = useCallback(async () => {
     if (!userId) return;
     setLoadingUser(true);
     try {
-      const { data } = await axios.get(
-        `${API_BASE_URL}/users/${userId}?embed=country,userType,gender,countPostsViews,countPosts`,
-        { headers }
-      );
-
-      const { data: dataministats } = await axios.get(
-        `${API_BASE_URL}/users/${userId}/stats`,
-        { headers }
-      );
-
-      console.log("Fetched user data:", data);
-      console.log("Fetched mini stats:", dataministats);
-
+      const { data } = await ApiService.getUser(userId, {
+        embed: "country,userType,gender,countPostsViews,countPosts",
+      });
+      const { data: dataministats } = await ApiService.getUserStats(userId);
       if (data?.result && dataministats?.result) {
         setUser(data?.result ?? null);
         setMiniStats(dataministats?.result ?? null);
@@ -85,26 +56,33 @@ const Anotherprofile = ({ navigation }) => {
     } finally {
       setLoadingUser(false);
     }
-  }, [userId, headers]);
+  }, [userId]);
 
   const fetchPosts = useCallback(async () => {
     if (!userId) return;
     setLoadingPosts(true);
+
     try {
-      // List user's posts (embed pictures & city for the card)
-      const url = `${API_BASE_URL}/posts?userId=${encodeURIComponent(
-        userId
-      )}&perPage=20&embed=pictures,city&op=search`;
-      const { data } = await axios.get(url, { headers });
+      // Fetch user's posts (embed city & pictures for cards)
+      const { data } = await postsService.posts.getAll({
+        userId, // will be sent as user_id
+        perPage: 20, // will be sent as per_page
+        embed: "pictures,city",
+        op: "search",
+        noCache: 1, // optional: avoid stale cache
+      });
       const raw = data?.result?.data ?? data?.result ?? [];
       const mapped = Array.isArray(raw)
         ? raw.map((p) => {
+            // Prefer API-provided main picture, then first in pictures
             const img =
-              Array.isArray(p.pictures) && p.pictures.length > 0
-                ? p.pictures[0]?.url?.large ||
-                  p.pictures[0]?.url?.medium ||
-                  p.pictures[0]?.url?.small
-                : null;
+              p?.picture?.url?.large ||
+              p?.picture?.url?.medium ||
+              (Array.isArray(p.pictures) && p.pictures[0]?.url?.large) ||
+              (Array.isArray(p.pictures) && p.pictures[0]?.url?.medium) ||
+              (Array.isArray(p.pictures) && p.pictures[0]?.url?.small) ||
+              null;
+
             return {
               id: String(p.id),
               title: p.title || "",
@@ -115,6 +93,7 @@ const Anotherprofile = ({ navigation }) => {
             };
           })
         : [];
+
       setPosts(mapped);
     } catch (e) {
       setPosts([]);
@@ -125,7 +104,7 @@ const Anotherprofile = ({ navigation }) => {
     } finally {
       setLoadingPosts(false);
     }
-  }, [userId, headers]);
+  }, [userId, postsService]);
 
   useEffect(() => {
     fetchUser();

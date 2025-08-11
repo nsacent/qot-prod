@@ -16,11 +16,9 @@ import Header from "../../layout/Header";
 import { COLORS, FONTS, IMAGES, SIZES } from "../../constants/theme";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import FeatherIcon from "react-native-vector-icons/Feather";
-import axios from "axios";
 import { AuthContext } from "../../context/AuthProvider";
 import { ScrollView } from "react-native-gesture-handler";
 import MyadsSheet from "../../components/BottomSheet/MyadsSheet";
-import { getCityName, preloadCities } from "../../../src/services/cityService";
 import { Skeleton } from "moti/skeleton";
 import postsService from "../../../src/services/postsService";
 import ConfirmModal from "../../components/Modal/ConfirmModal";
@@ -41,7 +39,6 @@ const Myads = ({ navigation }) => {
   const [favourites, setFavourites] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [citiesLoaded, setCitiesLoaded] = useState(false);
   const [favoritesPage, setFavoritesPage] = useState(1);
   const [allFavorites, setAllFavorites] = useState([]);
   const [hasMoreFavorites, setHasMoreFavorites] = useState(true);
@@ -63,26 +60,17 @@ const Myads = ({ navigation }) => {
 
   const formatPrice = (price, currencyCode) => {
     const amount = parseFloat(price || 0);
-    if (currencyCode === "UGX") {
-      return `${amount.toLocaleString()} UGX`;
-    }
+    if (currencyCode === "UGX") return `${amount.toLocaleString()} UGX`;
     return `$${amount.toLocaleString()}`;
   };
 
-  const fetchWithRetry = async (url, options, retries = 3) => {
-    try {
-      return await axios(url, options);
-    } catch (error) {
-      if (retries <= 0) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return fetchWithRetry(url, options, retries - 1);
-    }
-  };
-
+  // --- API calls (embed city) -------------------------------------------------
   const fetchAdsData = async () => {
+    // detailed=1 will include relationships (incl. city) without needing embed
     return await postsService.posts.getAll({
       belongLoggedUser: 1,
       detailed: 1,
+      noCache: 1,
     });
   };
 
@@ -90,20 +78,11 @@ const Myads = ({ navigation }) => {
     let savedResponse;
 
     try {
-      savedResponse = await postsService.posts.getFavorite({
-        page,
-      });
-
-      if (
-        !savedResponse ||
-        !savedResponse.data ||
-        !savedResponse.data?.result
-      ) {
+      savedResponse = await postsService.posts.getFavorite({ page });
+      if (!savedResponse?.data?.result) {
         console.error("Invalid response structure from getFavorite");
         return { data: { result: { data: [] } } };
       }
-
-      console.log("Saved response:", savedResponse);
     } catch (error) {
       console.error("Failed to fetch favorites:", error);
       return { data: { result: { data: [] } } };
@@ -116,11 +95,16 @@ const Myads = ({ navigation }) => {
       setHasMoreFavorites(false);
     }
 
+    // Pull each post with city + pictures embedded (lightweight vs detailed=1)
     const postDetails = await Promise.all(
       resultData.map(async (savedItem) => {
         try {
           const postResponse = await postsService.posts.getById(
-            savedItem.post_id
+            savedItem.post_id,
+            {
+              embed: "city,pictures",
+              noCache: 1,
+            }
           );
           return {
             ...postResponse.data.result,
@@ -136,21 +120,17 @@ const Myads = ({ navigation }) => {
     return { data: { result: { data: postDetails } } };
   };
 
-  const processItemsWithCities = async (items, userToken) => {
-    return Promise.all(
-      items.map(async (item) => {
-        const cityName = await getCityName(item.city_id, userToken);
-        return {
-          ...item,
-          id: item.id.toString(),
-          cityName,
-          priceFormatted: formatPrice(item.price, item.currency_code),
-          pictures: item.pictures || [],
-          views_count: item.visits || 0,
-          saved_at_formatted: item.saved_at_formatted || null,
-        };
-      })
-    );
+  // --- Item formatting (no cityService) --------------------------------------
+  const processItems = (items) => {
+    return items.map((item) => ({
+      ...item,
+      id: String(item.id),
+      cityName: item?.city?.name || "",
+      priceFormatted: formatPrice(item.price, item.currency_code),
+      pictures: item.pictures || [],
+      views_count: item.visits || 0,
+      saved_at_formatted: item.saved_at_formatted || null,
+    }));
   };
 
   const loadInitialData = async () => {
@@ -158,22 +138,14 @@ const Myads = ({ navigation }) => {
       setLoading(true);
       setError(null);
 
-      await preloadCities(userToken);
-
       const [adsResponse, favoritesResponse] = await Promise.all([
         fetchAdsData(),
         fetchFavoritesData(1),
       ]);
 
       const [processedAds, processedFavorites] = await Promise.all([
-        processItemsWithCities(
-          adsResponse?.data?.result?.data || [],
-          userToken
-        ),
-        processItemsWithCities(
-          favoritesResponse?.data?.result?.data || [],
-          userToken
-        ),
+        processItems(adsResponse?.data?.result?.data || []),
+        processItems(favoritesResponse?.data?.result?.data || []),
       ]);
 
       setAds(processedAds);
@@ -184,18 +156,17 @@ const Myads = ({ navigation }) => {
       setError(getErrorMessage(error));
     } finally {
       setLoading(false);
-      setCitiesLoaded(true);
     }
   };
 
   const getErrorMessage = (error) => {
-    if (error.response) {
+    if (error?.response) {
       if (error.response.status === 401)
         return "Session expired. Please login again.";
       if (error.response.status === 404) return "Resource not found.";
       return `Server error: ${error.response.status}`;
     }
-    if (error.request) return "Network error. Please check your connection.";
+    if (error?.request) return "Network error. Please check your connection.";
     return "An unexpected error occurred.";
   };
 
@@ -203,13 +174,9 @@ const Myads = ({ navigation }) => {
     if (!hasMoreFavorites || loading) return;
 
     try {
-      // setLoading(true);
       const nextPage = favoritesPage + 1;
       const response = await fetchFavoritesData(nextPage);
-      const newFavorites = await processItemsWithCities(
-        response.data.result.data,
-        userToken
-      );
+      const newFavorites = processItems(response.data.result.data);
 
       setAllFavorites((prev) => [...prev, ...newFavorites]);
       setFavourites((prev) => [...prev, ...newFavorites]);
@@ -234,34 +201,31 @@ const Myads = ({ navigation }) => {
 
   const toggleFavorite = async (postId) => {
     try {
-      const isFavorited = favourites.some(
-        (item) => item.id === postId.toString()
-      );
+      const isFavorited = favourites.some((item) => item.id === String(postId));
 
       if (isFavorited) {
+        // Delete favorite by saved-record id or by post id depending on your backend:
+        // Assuming your API uses post id for deleteFavorite:
         await postsService.posts.deleteFavorite(postId);
         setFavourites((prev) =>
-          prev.filter((item) => item.id !== postId.toString())
+          prev.filter((item) => item.id !== String(postId))
         );
         setAllFavorites((prev) =>
-          prev.filter((item) => item.id !== postId.toString())
+          prev.filter((item) => item.id !== String(postId))
         );
       } else {
+        // Pull post with city + pictures for UI
         const response = await postsService.posts.getById(postId, {
-          embed: "pictures",
+          embed: "city,pictures",
+          noCache: 1,
         });
+        const [newFavorite] = processItems([response.data.result]);
 
-        const newFavorite = await processItemsWithCities(
-          [response.data.result],
-          userToken
-        );
+        // Create favorite (expects { post_id })
+        await postsService.posts.makeFavorite(postId);
 
-        await postsService.posts.makeFavorate({
-          post_id: postId,
-        });
-
-        setFavourites((prev) => [...prev, ...newFavorite]);
-        setAllFavorites((prev) => [...prev, ...newFavorite]);
+        setFavourites((prev) => [...prev, newFavorite]);
+        setAllFavorites((prev) => [...prev, newFavorite]);
       }
 
       return true;
@@ -279,28 +243,21 @@ const Myads = ({ navigation }) => {
 
   const handleDelete = async (adId) => {
     try {
-      setDeletingIds((prev) => [...prev, adId]); // Add to deleting array
+      setDeletingIds((prev) => [...prev, adId]);
       await postsService.posts.delete(adId);
       setAds((prev) => prev.filter((item) => item.id !== adId));
     } catch (err) {
       console.error("Delete failed:", err);
       alert("Failed to delete ad. Please try again.");
     } finally {
-      setDeletingIds((prev) => prev.filter((id) => id !== adId)); // Remove from deleting array
+      setDeletingIds((prev) => prev.filter((id) => id !== adId));
     }
   };
 
-  const getImageSource = (pictures) => {
-    if (!pictures || !Array.isArray(pictures) || pictures.length === 0) {
-      return IMAGES.car1;
-    }
+  const getImageSource = (item) => {
+    const main = item?.picture?.url?.medium || item?.pictures?.[0]?.url?.medium;
 
-    const firstPicture = pictures[0];
-    if (!firstPicture?.url?.medium) {
-      return IMAGES.car1;
-    }
-
-    return { uri: firstPicture.url.medium };
+    return main ? { uri: main } : IMAGES.car1;
   };
 
   const handleArchive = async (item) => {
@@ -343,20 +300,14 @@ const Myads = ({ navigation }) => {
     }
   };
 
-  const AdItem = ({
-    item,
-    onDelete,
-    onMorePress,
-    deletingIds,
-    onRequestDelete,
-  }) => {
+  const AdItem = ({ item, onMorePress, deletingIds, onRequestDelete }) => {
     const isDeleting = deletingIds.includes(item.id);
     const [isProcessing, setIsProcessing] = useState(false);
     const isFavorited = favourites.some((fav) => fav.id === item.id);
 
     const handleToggleFavorite = async () => {
       setIsProcessing(true);
-      await toggleFavorite(parseInt(item.id));
+      await toggleFavorite(parseInt(item.id, 10));
       setIsProcessing(false);
     };
 
@@ -375,12 +326,7 @@ const Myads = ({ navigation }) => {
         onPress={() => navigation.navigate("ItemDetails", { itemId: item.id })}
       >
         <TouchableOpacity
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            zIndex: 1,
-          }}
+          style={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}
           onPress={() => onMorePress(item)}
         >
           <Image
@@ -393,6 +339,7 @@ const Myads = ({ navigation }) => {
             }}
           />
         </TouchableOpacity>
+
         <View
           style={{
             flexDirection: "row",
@@ -403,7 +350,7 @@ const Myads = ({ navigation }) => {
         >
           <Image
             style={{ height: 70, width: 70, borderRadius: 6 }}
-            source={getImageSource(item.pictures)}
+            source={getImageSource(item)}
             resizeMode="cover"
             onError={(e) =>
               console.log("Image load error:", e.nativeEvent.error)
@@ -447,6 +394,7 @@ const Myads = ({ navigation }) => {
             </View>
           </View>
         </View>
+
         <View
           style={{
             flexDirection: "row",
@@ -476,13 +424,15 @@ const Myads = ({ navigation }) => {
                 {item.views_count}
               </Text>
             </View>
+
             <View
               style={{
                 height: 15,
                 width: 1,
                 backgroundColor: colors.borderColor,
               }}
-            ></View>
+            />
+
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
             >
@@ -512,6 +462,7 @@ const Myads = ({ navigation }) => {
               </Text>
             </View>
           </View>
+
           <TouchableOpacity
             style={[
               GlobalStyleSheet.background,
@@ -526,7 +477,6 @@ const Myads = ({ navigation }) => {
                 alignItems: "center",
               },
             ]}
-            //onPress={() => onDelete(item.id)}
             onPress={() => onRequestDelete(item.id)}
             disabled={isDeleting}
           >
@@ -540,6 +490,7 @@ const Myads = ({ navigation }) => {
             )}
           </TouchableOpacity>
         </View>
+
         <View
           style={{
             width: 5,
@@ -550,7 +501,7 @@ const Myads = ({ navigation }) => {
             borderTopLeftRadius: 6,
             borderBottomLeftRadius: 6,
           }}
-        ></View>
+        />
       </TouchableOpacity>
     );
   };
@@ -560,7 +511,7 @@ const Myads = ({ navigation }) => {
 
     const handleToggleFavorite = async () => {
       setIsProcessing(true);
-      await toggleFavorite(parseInt(item.id));
+      await toggleFavorite(parseInt(item.id, 10));
       setIsProcessing(false);
     };
 
@@ -581,7 +532,7 @@ const Myads = ({ navigation }) => {
           <View style={{ flexDirection: "row", flex: 1 }}>
             <Image
               style={{ width: 70, height: 70, borderRadius: 6 }}
-              source={getImageSource(item.pictures)}
+              source={getImageSource(item)}
               resizeMode="cover"
               onError={(e) =>
                 console.log("Image load error:", e.nativeEvent.error)
@@ -617,7 +568,7 @@ const Myads = ({ navigation }) => {
                     { fontSize: 11, color: colors.text, marginLeft: 4 },
                   ]}
                 >
-                  {item.cityName}
+                  {item.cityName /* or item.city?.name */}
                 </Text>
               </View>
               {item.saved_at_formatted && (
@@ -1000,8 +951,6 @@ const Myads = ({ navigation }) => {
           onPressLeft={() => navigation.goBack()}
         />
 
-        {!citiesLoaded && <View style={{ padding: 0 }}></View>}
-
         <TabHeader />
 
         <View
@@ -1026,12 +975,13 @@ const Myads = ({ navigation }) => {
             ref={scrollRef}
             onScroll={Animated.event(
               [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: false }
+              {
+                useNativeDriver: false,
+              }
             )}
             onMomentumScrollEnd={(e) => {
               const offsetX = e.nativeEvent.contentOffset.x;
               const screenWidth = SIZES.width;
-
               if (Math.round(offsetX) === Math.round(screenWidth)) {
                 setCurrentIndex(1);
               } else if (Math.round(offsetX) === 0) {
@@ -1056,8 +1006,7 @@ const Myads = ({ navigation }) => {
             navigation.navigate("EditAd", { item: selectedItem });
           }}
           onArchive={() => {
-            console.log("Archive", selectedItem);
-            handleArchive(selectedItem); // ✅ fixed
+            handleArchive(selectedItem);
           }}
         />
       </SafeAreaView>

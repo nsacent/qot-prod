@@ -19,7 +19,7 @@ const SettingData = [
   {
     id: "1",
     image: IMAGES.bell,
-    title: "Notification",
+    title: "Notification & Preferences",
     navigate: "Notification",
   },
   { id: "2", image: IMAGES.verified, title: "Privacy", navigate: "Privacy" },

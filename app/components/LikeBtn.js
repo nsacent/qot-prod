@@ -4,8 +4,7 @@ import FontAwesome from "react-native-vector-icons/FontAwesome";
 import { COLORS } from "../constants/theme";
 import { AuthContext } from "../context/AuthProvider";
 import axios from "axios";
-
-const API_BASE_URL = "https://qot.ug/api";
+import postsService from "../../src/services/postsService";
 
 const LikeBtn = ({ postId, defaultLiked = false }) => {
   const { userToken } = useContext(AuthContext);
@@ -19,23 +18,13 @@ const LikeBtn = ({ postId, defaultLiked = false }) => {
 
     try {
       setLoading(true);
-      const headers = {
-        Authorization: `Bearer ${userToken}`,
-        "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      };
-
       if (isLike) {
-        await axios.delete(`${API_BASE_URL}/savedPosts/${postId}`, { headers });
+        // Unlike the post
+        await postsService.posts.deleteFavorite(postId);
       } else {
-        await axios.post(
-          `${API_BASE_URL}/savedPosts`,
-          { post_id: postId },
-          { headers }
-        );
+        // Like the post
+        await postsService.posts.makeFavorite({ post_id: postId });
       }
-
       setIsLike(!isLike);
     } catch (error) {
       console.error("Like toggle error:", error);

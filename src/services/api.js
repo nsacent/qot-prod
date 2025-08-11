@@ -171,8 +171,10 @@ export const ApiService = {
     });
   },
 
-  getUser: (id) => api.get(replaceParams(API_ENDPOINTS.USER.BY_ID, { id })),
-  userStats: (id) => api.get(replaceParams(API_ENDPOINTS.USER.STATS, { id })),
+  getUser: (id, params) =>
+    api.get(replaceParams(API_ENDPOINTS.USER.BY_ID, { id }), { params }),
+  getUserStats: (id) =>
+    api.get(replaceParams(API_ENDPOINTS.USER.STATS, { id })),
 
   // Categories
   getCategories: (params) =>

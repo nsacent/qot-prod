@@ -29,10 +29,7 @@ export const reportTypesService = {
 };
 
 export const postsService = {
-  getAll: (params = {}) => {
-    const queryParams = { ...params, embed: params.embed || "pictures" };
-    return api.get(API_ENDPOINTS.POSTS.GET_ALL, { params: queryParams });
-  },
+  getAll: (params = {}) => api.get(API_ENDPOINTS.POSTS.GET_ALL, { params }),
 
   getPendingApproval: (pendingApproval = 1) =>
     postsService.getAll({
@@ -46,10 +43,8 @@ export const postsService = {
       archived: 1,
     }),
 
-  getById: (id, embed = "pictures") =>
-    api.get(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), {
-      params: { embed },
-    }),
+  getById: (id, params = {}) =>
+    api.get(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), { params }),
 
   getFavorite: (params = { embed: "{post,city,pictures,user}" }) => {
     const queryParams = { ...params, embed: params.embed || "page=1" };
@@ -58,23 +53,16 @@ export const postsService = {
     });
   },
 
-  getFavoriteById: (id, embed = {}) => {
-    api.get(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), {
-      params: { embed },
-    });
-  },
+  getFavoriteById: (id, embed = {}) =>
+    api.get(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), { embed }),
 
-  makeFavorite: (params = {}) => {
-    const queryParams = { ...params, embed: params.embed || "page=1" };
-    return api.get(API_ENDPOINTS.FAVORITE.GET_FAVORITE, {
-      params: queryParams,
-    });
-  },
+  makeFavorite: ({ post_id }) =>
+    api.post(API_ENDPOINTS.FAVORITE.GET_FAVORITE, { post_id }),
 
-  deleteFavorite: (id, embed = {}) => {
-    api.delete(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), {
-      params: { embed },
-    });
+  deleteFavorite: (ids) => {
+    // ids can be number, string, or array
+    let idParam = Array.isArray(ids) ? ids.join(",") : ids;
+    return api.delete(`/savedPosts/${idParam}`);
   },
 
   create: (postData, pictures = []) => {
@@ -116,9 +104,8 @@ export const postsService = {
   delete: (ids) =>
     api.delete(`/posts/${Array.isArray(ids) ? ids.join(",") : ids}`),
 
-  toggleArchive: (id, payload) => {
-    return api.put(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), payload);
-  },
+  toggleArchive: (id, payload) =>
+    api.put(replaceParams(API_ENDPOINTS.POSTS.BY_ID, { id }), payload),
 };
 
 export default {
