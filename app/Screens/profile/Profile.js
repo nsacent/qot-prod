@@ -143,7 +143,7 @@ const Profile = ({ navigation }) => {
 
   const fetchUserMiniStats = async (userId) => {
     try {
-      const response = await ApiService.userStats(userId);
+      const response = await ApiService.getUserStats(userId);
       if (response.data?.success && response.data?.result?.posts) {
         setMiniStats(response.data?.result?.posts);
       } else {

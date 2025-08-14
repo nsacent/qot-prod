@@ -32,6 +32,7 @@ import ReportMessageSheet from "../../components/BottomSheet/ReportMessageSheet"
 import RBSheet from "react-native-raw-bottom-sheet";
 import MakeOfferSheet from "../../components/BottomSheet/MakeOfferSheet";
 import postsService from "../../../src/services/postsService";
+import AdImageCarousel from "../Components/AdImageCarousel";
 
 const ItemDetails = ({ navigation, route }) => {
   const { itemId } = route.params;
@@ -568,38 +569,11 @@ const ItemDetails = ({ navigation, route }) => {
                 Platform.OS === "web" ? SIZES.height / 3.5 : SIZES.height / 2.8,
             }}
           >
-            <Swiper
-              loop={false}
-              paginationStyle={{ bottom: 12 }}
-              dotStyle={{
-                height: 6,
-                width: 6,
-                backgroundColor: "rgba(255,255,255,.2)",
-              }}
-              activeDotStyle={{
-                height: 8,
-                width: 8,
-                backgroundColor: COLORS.white,
-              }}
-            >
-              {itemImages.map((image, index) =>
-                image?.uri ? (
-                  <Image
-                    key={index}
-                    style={{ height: "100%", width: "100%" }}
-                    source={{ uri: image.uri }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Image
-                    key={index}
-                    style={{ height: "100%", width: "100%" }}
-                    source={IMAGES.detail1}
-                    resizeMode="cover"
-                  />
-                )
-              )}
-            </Swiper>
+            <AdImageCarousel
+              images={itemImages}
+              colors={colors}
+              fallback={IMAGES.detail1}
+            />
 
             {/* Header Actions */}
             <View
