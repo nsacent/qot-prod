@@ -137,6 +137,16 @@ const StackNavigator = () => {
             {/* Sell */}
             <StackComponent.Screen name="Sell" component={Sell} />
             <StackComponent.Screen name="Location" component={Location} />
+            <StackComponent.Screen name="Selllist" component={Selllist} />
+            <StackComponent.Screen name="Form" component={Form} />
+            <StackComponent.Screen name="Uploadphoto" component={Uploadphoto} />
+            <StackComponent.Screen name="Setprice" component={Setprice} />
+            <StackComponent.Screen name="Review" component={Review} />
+
+            <StackComponent.Screen
+              name="Comfirmlocation"
+              component={Comfirmlocation}
+            />
             {/* ... all other sell screens ... */}
 
             {/* Profile */}

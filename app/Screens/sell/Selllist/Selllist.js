@@ -1,316 +1,190 @@
-import React from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Platform } from 'react-native';
-import { useTheme } from '@react-navigation/native';
-import Header from '../../../layout/Header';
-import { FONTS } from '../../../constants/theme';
-import { GlobalStyleSheet } from '../../../constants/StyleSheet';
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  SafeAreaView,
+  TouchableOpacity,
+  Platform,
+  ActivityIndicator,
+  ScrollView,
+  Alert,
+} from "react-native";
+import { useTheme } from "@react-navigation/native";
+import Header from "../../../layout/Header";
+import { FONTS } from "../../../constants/theme";
+import { GlobalStyleSheet } from "../../../constants/StyleSheet";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-
-const data = {
-    Location: [
-        {
-            id: "1",
-            title: "aerawerawer"
-        },
-        {
-            id: "2",
-            title: "aerawerawer"
-        },
-        {
-            id: "3",
-            title: "aerawerawer"
-        },
-    ],
-    Mobile: [
-        {
-            id: "1",
-            title: "mobile Phones",
-        },
-        {
-            id: "2",
-            title: "Accessories",
-        },
-        {
-            id: "3",
-            title: "Tablets",
-        },
-    ],
-    Properties: [
-        {
-            id: "1",
-            title: "For Sale: Houses & Apartments",
-        },
-        {
-            id: "2",
-            title: "For Rent: Houses & Apartments",
-        },
-        {
-            id: "3",
-            title: "Lands & Plots",
-        },
-        {
-            id: "4",
-            title: "For Rent: Shop & Offices",
-        },
-        {
-            id: "5",
-            title: "For Sale: Shop & Offices",
-        },
-        {
-            id: "6",
-            title: "PG & Guest Houses",
-        },
-    ],
-    Jobs: [
-        {
-            id: "1",
-            title: "Data entry & Bank office"
-        },
-        {
-            id: "2",
-            title: "Sales & Marketing",
-        },
-        {
-            id: "3",
-            title: "BPO & Telecaller",
-        },
-        {
-            id: "4",
-            title: "Driver",
-        },
-        {
-            id: "5",
-            title: "Office Assistant",
-        },
-        {
-            id: "6",
-            title: "Delivery & Collection",
-        },
-        {
-            id: "7",
-            title: "Delivery & Collection",
-        },
-        {
-            id: "8",
-            title: "Teacher",
-        },
-        {
-            id: "9",
-            title: "Cook",
-        },
-        {
-            id: "10",
-            title: "Designer",
-        },
-    ],
-    Bike: [
-        {
-            id: "1",
-            title: "Motorcycles",
-        },
-        {
-            id: "2",
-            title: "Scooters",
-        },
-        {
-            id: "3",
-            title: "Spare Parts",
-        },
-        {
-            id: "4",
-            title: "Bicycles",
-        },
-    ],
-    Electornics: [
-        {
-            id: "1",
-            title: "TVs, Video - Audio",
-        },
-        {
-            id: "2",
-            title: "Kitchen & Other Appliances",
-        },
-        {
-            id: "3",
-            title: "Computers & Laptops",
-        },
-        {
-            id: "4",
-            title: "Crameras & Lenses",
-        },
-        {
-            id: "5",
-            title: "Games & Entertainment",
-        },
-        {
-            id: "6",
-            title: "Fridges",
-        },
-        {
-            id: "7",
-            title: "Computer Accessories",
-        },
-        {
-            id: "8",
-            title: "Hard Disks, Printers & Montiors",
-        },
-        {
-            id: "9",
-            title: "ACs",
-        },
-        {
-            id: "10",
-            title: "Washing Machaines",
-        },
-    ],
-    Furniture: [
-        {
-            id: "1",
-            title: "Sofa & Dining",
-        },
-        {
-            id: "2",
-            title: "Beds & Wardrobes",
-        },
-        {
-            id: "3",
-            title: "Home Decor & Garden",
-        },
-        {
-            id: "4",
-            title: "Kids Furniture",
-        },
-        {
-            id: "5",
-            title: "Other Household itema",
-        },
-    ],
-    Fashion: [
-        {
-            id: "1",
-            title: "Men",
-        },
-        {
-            id: "2",
-            title: "Women",
-        },
-        {
-            id: "3",
-            title: "Kids",
-        },
-    ],
-    Pets: [
-        {
-            id: "1",
-            title: "Fishes & Aquarium",
-        },
-        {
-            id: "2",
-            title: "Pet Food & Accessories",
-        },
-        {
-            id: "3",
-            title: "Dogs",
-        },
-        {
-            id: "4",
-            title: "Other Pets",
-        },
-    ],
-    Books: [
-        {
-            id: "1",
-            title: "Books",
-        },
-        {
-            id: "2",
-            title: "Gym & Fitness",
-        },
-        {
-            id: "3",
-            title: "Musical instruments",
-        },
-        {
-            id: "4",
-            title: "Sports Equipment",
-        },
-        {
-            id: "5",
-            title: "Other Hobbies",
-        },
-    ],
-    Service: [
-        {
-            id: "1",
-            title: "Education & Classes",
-        },
-        {
-            id: "2",
-            title: "Tours & Travel",
-        },
-        {
-            id: "3",
-            title: "Electronics Repair & Services",
-        },
-        {
-            id: "4",
-            title: "Health & Beauty",
-        },
-        {
-            id: "5",
-            title: "Home Renovation & Repair",
-        },
-        {
-            id: "6",
-            title: "Cleaning & Pest Control",
-        },
-        {
-            id: "7",
-            title: "Legal & Documentation Services",
-        },
-        {
-            id: "8",
-            title: "Packers & Movers",
-        },
-        {
-            id: "9",
-            title: "Other Service",
-        },
-    ],
-}
+const API_BASE_URL = "https://qot.ug/api";
+// per-parent cache key: qot.subcats.<parentId>.v1
+const subkey = (parentId) => `qot.subcats.${parentId}.v1`;
+const TTL = 24 * 60 * 60 * 1000; // 24h
 
 const Selllist = ({ route, navigation }) => {
+  const { colors } = useTheme();
+  // From Sell screen: navigation.navigate("Selllist", { cat: item.slug, catId: Number(item.id) })
+  const { cat, catId } = route.params || {};
 
-    const { cat } = route.params;
+  const [subs, setSubs] = useState([]); // array of { id, title/name, slug }
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
 
-    const { colors } = useTheme();
+  const loadFromCache = useCallback(async () => {
+    try {
+      if (!catId) return null;
+      const raw = await AsyncStorage.getItem(subkey(catId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const fresh = parsed?.ts && Date.now() - parsed.ts < TTL;
+      if (Array.isArray(parsed?.data)) {
+        setSubs(parsed.data);
+      }
+      return !!fresh;
+    } catch {
+      return null;
+    }
+  }, [catId]);
 
-    return (
-        <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-            <Header
-                title={cat}
-                leftIcon={'back'}
-                titleLeft
-            />
-            <View style={[Platform.OS === 'web' && GlobalStyleSheet.container,{padding:0}]}>
-                {data[cat].map((data, index) => (
-                    <View key={index} style={{ paddingHorizontal: 15 }}>
-                        <TouchableOpacity
-                            style={{
-                                paddingHorizontal: 15,
-                                paddingVertical: 15,
-                                borderBottomWidth: 1,
-                                borderBottomColor: colors.border
-                            }}
-                            onPress={() => navigation.navigate('Form')}
-                        >
-                            <Text style={[FONTS.font, FONTS.fontMedium, { color: colors.title }]}>{data.title}</Text>
-                        </TouchableOpacity>
-                    </View>
-                ))}
-            </View>
-        </SafeAreaView>
-    )
-}
+  const saveToCache = useCallback(
+    async (data) => {
+      try {
+        if (!catId) return;
+        await AsyncStorage.setItem(
+          subkey(catId),
+          JSON.stringify({ ts: Date.now(), data })
+        );
+      } catch {}
+    },
+    [catId]
+  );
 
-export default Selllist
+  const fetchChildren = useCallback(async () => {
+    try {
+      setFetchError(null);
+      // Strategy that matches the response you pasted:
+      // GET /categories?embed=children → find the parent by id and read .children
+      const res = await fetch(`${API_BASE_URL}/categories?embed=children`, {
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Content-Language": "en",
+          "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
+          "Content-Language": "en",
+          "X-AppType": "docs",
+        },
+      });
+      const json = await res.json();
+      const list = json?.result?.data ?? [];
+      const parent = list.find((c) =>
+        catId ? Number(c.id) === Number(catId) : c.slug === cat
+      );
+
+      const children = Array.isArray(parent?.children) ? parent.children : [];
+
+      // Map to UI shape your component expects
+      const mapped = children.map((c) => ({
+        id: String(c.id),
+        title: c.name, // keep your existing label prop
+        slug: c.slug,
+      }));
+
+      setSubs(mapped);
+      await saveToCache(mapped);
+    } catch (e) {
+      setFetchError("Failed to load sub‑categories.");
+      console.log("Sub-categories fetch error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [cat, catId, saveToCache]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      // 1) Try cache for instant paint
+      await loadFromCache();
+      // 2) Revalidate from network
+      if (mounted) await fetchChildren();
+      // if cache was empty, loading ends in fetchChildren
+      if (mounted) setLoading(false);
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [loadFromCache, fetchChildren]);
+
+  const handlePress = (item) => {
+    // Navigate to your form; pass the chosen subcategory id/slug for the posting flow
+    navigation.navigate("Form", {
+      subCategoryId: item.id,
+      subCategorySlug: item.slug,
+    });
+  };
+
+  return (
+    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
+      <Header
+        title={
+          cat
+            ? cat.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase())
+            : "Select a sub category"
+        }
+        leftIcon={"back"}
+        titleLeft
+      />
+      {loading && subs.length === 0 ? (
+        <View
+          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+        >
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[FONTS.font, { color: colors.text, marginTop: 8 }]}>
+            Loading…
+          </Text>
+        </View>
+      ) : (
+        <ScrollView>
+          <View
+            style={[
+              Platform.OS === "web" && GlobalStyleSheet.container,
+              { padding: 0 },
+            ]}
+          >
+            {subs.length === 0 ? (
+              <View style={{ padding: 16 }}>
+                <Text style={[FONTS.font, { color: colors.text }]}>
+                  {fetchError || "No sub-categories found."}
+                </Text>
+              </View>
+            ) : (
+              subs.map((row, index) => (
+                <View key={row.id ?? index} style={{ paddingHorizontal: 15 }}>
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 15,
+                      paddingVertical: 15,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                    onPress={() => handlePress(row)}
+                  >
+                    <Text
+                      style={[
+                        FONTS.font,
+                        FONTS.fontMedium,
+                        { color: colors.title },
+                      ]}
+                    >
+                      {row.title}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+          </View>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+};
+
+export default Selllist;
