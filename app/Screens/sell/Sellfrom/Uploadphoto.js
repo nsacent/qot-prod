@@ -1,135 +1,262 @@
-import React, { useState } from 'react';
-import { View, Text, SafeAreaView, Image, TouchableOpacity } from 'react-native';
-import { COLORS, FONTS, IMAGES, SIZES } from '../../../constants/theme';
-import { ScrollView } from 'react-native-gesture-handler';
-import { useTheme } from '@react-navigation/native';
-import Header from '../../../layout/Header';
-import { GlobalStyleSheet } from '../../../constants/StyleSheet';
-import Button from '../../../components/Button/Button';
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  SafeAreaView,
+  Image,
+  TouchableOpacity,
+  Alert,
+  Platform,
+} from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
+import { ScrollView } from "react-native-gesture-handler";
+import { useTheme } from "@react-navigation/native";
+import Header from "../../../layout/Header";
+import { GlobalStyleSheet } from "../../../constants/StyleSheet";
+import Button from "../../../components/Button/Button";
 
-const postimage = [
-    {
-        id: "1",
-        image: IMAGES.car1
-    },
-    {
-        id: "2",
-        image: IMAGES.car2
-    },
-    {
-        id: "3",
-        image: IMAGES.car3
-    },
-    {
-        id: "4",
-        image: IMAGES.car4
-    },
-    {
-        id: "5",
-        image: IMAGES.car5
-    },
-    {
-        id: "6",
-        image: IMAGES.car6
-    },
-    {
-        id: "7",
-        image: IMAGES.car1
-    },
-    {
-        id: "8",
-        image: IMAGES.car2
-    },
-    {
-        id: "9",
-        image: IMAGES.car3
-    },
-    {
-        id: "10",
-        image: IMAGES.car4
-    },
-    {
-        id: "11",
-        image: IMAGES.car5
-    },
-    {
-        id: "12",
-        image: IMAGES.car6
-    },
+// Seed/demo images — you can start empty: []
+const seedImages = [
+  { id: "1", uri: Image.resolveAssetSource(IMAGES.car1).uri, localAsset: true },
+  { id: "2", uri: Image.resolveAssetSource(IMAGES.car2).uri, localAsset: true },
+  { id: "3", uri: Image.resolveAssetSource(IMAGES.car3).uri, localAsset: true },
+  { id: "4", uri: Image.resolveAssetSource(IMAGES.car4).uri, localAsset: true },
+  { id: "5", uri: Image.resolveAssetSource(IMAGES.car5).uri, localAsset: true },
+  { id: "6", uri: Image.resolveAssetSource(IMAGES.car6).uri, localAsset: true },
 ];
 
+const MAX_PHOTOS = 8;
+
 const Uploadphoto = ({ navigation }) => {
+  const theme = useTheme();
+  const { colors } = theme;
 
-    const [imageurl, setimageurl] = React.useState(IMAGES.car5);
+  // State
+  const [images, setImages] = useState(seedImages); // or [] if you want empty start
+  const [activeImage, setActiveImage] = useState(
+    seedImages.length ? seedImages[0].uri : null
+  );
 
-    const theme = useTheme();
-    const { colors } = theme;
+  // Derived
+  const previewHeight = useMemo(() => {
+    const w = SIZES.width;
+    const base =
+      SIZES.width > SIZES.container
+        ? SIZES.container
+        : SIZES.width - Math.min(SIZES.width * 0.2, SIZES.container * 0.2);
+    return base;
+  }, []);
 
-    return (
-        <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-            <Header
-                title="Upload your photos"
-                leftIcon={'back'}
-                titleLeft
+  // Permissions (ask once when pressing the camera, but pre-warm here if you want)
+  const requestMediaLibraryPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission needed",
+        "We need access to your photos to let you upload."
+      );
+      return false;
+    }
+    return true;
+  };
 
+  // Pick from gallery
+  const onPickImages = async () => {
+    const ok = await requestMediaLibraryPermission();
+    if (!ok) return;
+
+    try {
+      const remaining = Math.max(0, MAX_PHOTOS - images.length);
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true, // iOS 14+ and web; Android will return one
+        quality: 0.8,
+        selectionLimit: remaining > 0 ? remaining : 1, // iOS/web only
+      });
+
+      if (result.canceled) return;
+
+      // Normalize result across platforms
+      const picked = (result.assets || [])
+        .slice(0, remaining || 0) // enforce limit
+        .map((a, idx) => ({
+          id: `picked-${Date.now()}-${idx}`,
+          uri: a.uri,
+          localAsset: false,
+        }));
+
+      if (!picked.length) {
+        if (images.length >= MAX_PHOTOS) {
+          Alert.alert(
+            "Limit reached",
+            `You can add up to ${MAX_PHOTOS} photos.`
+          );
+        }
+        return;
+      }
+
+      const next = [...images, ...picked].slice(0, MAX_PHOTOS);
+      setImages(next);
+
+      // If we had no active image, set the first newly picked
+      if (!activeImage) setActiveImage(picked[0].uri);
+    } catch (e) {
+      console.log("Image pick error:", e);
+      Alert.alert("Error", "Could not open your gallery. Please try again.");
+    }
+  };
+
+  // Remove image (long press)
+  const removeImage = (id, uri) => {
+    Alert.alert("Remove photo", "Do you want to remove this photo?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          const next = images.filter((it) => it.id !== id);
+          setImages(next);
+          // If we removed the active one, choose another
+          if (activeImage === uri) {
+            setActiveImage(next.length ? next[0].uri : null);
+          }
+        },
+      },
+    ]);
+  };
+
+  // Navigate forward (send selected images)
+  const goNext = () => {
+    if (!images.length) {
+      Alert.alert("No photos", "Please add at least one photo to continue.");
+      return;
+    }
+    navigation.navigate("Setprice", {
+      photos: images, // [{id, uri, localAsset?}]
+      primary: activeImage,
+    });
+  };
+
+  return (
+    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
+      <Header title="Upload your photos" leftIcon={"back"} titleLeft />
+
+      {/* Preview */}
+      <View>
+        <View
+          style={{
+            paddingVertical: 30,
+            backgroundColor: "rgba(71,90,119,.25)",
+          }}
+        >
+          {activeImage ? (
+            <Image
+              style={{
+                height: previewHeight,
+                width: "100%",
+                resizeMode: "contain",
+              }}
+              source={{ uri: activeImage }}
             />
-            <View>
-                <View style={{ paddingVertical: 30, backgroundColor: 'rgba(71,90,119,.25)' }}>
-                    <Image
-                        style={{
-                            height: SIZES.width > SIZES.container ? SIZES.container : SIZES.width - (SIZES.width * (20 / 100) > SIZES.container ? SIZES.container * (20 / 100) : SIZES.width * (20 / 100)),
-                            width: '100%',
-                            resizeMode: 'contain'
-                        }}
-                        source={imageurl}
-                    />
-                </View>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15 }}>
-                <Text style={{ flex: 1, ...FONTS.fontMedium, ...FONTS.h5, color: colors.title }}>Gallery</Text>
-                <TouchableOpacity
-                    style={{ padding: 10 }}
-                >
-                    <Image
-                        style={{ height: 24, width: 24, tintColor: colors.title }}
-                        source={IMAGES.camera}
-                    />
-                </TouchableOpacity>
-            </View>
-            <ScrollView
-                showsVerticalScrollIndicator={false}
-                scrollEventThrottle={16}
+          ) : (
+            <View
+              style={{
+                height: previewHeight,
+                width: "100%",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                    {postimage.map((item, index) => {
-                        return (
-                            <View
-                                key={index}
-                                style={{ width: '25%', height: SIZES.width / 4 > SIZES.container ? SIZES.container / 4 : SIZES.width / 4, padding: 1 }}
-                            >
-                                <TouchableOpacity
-                                    onPress={() => {
-                                        setimageurl(item.image)
-                                    }}
-                                >
-                                    <Image
-                                        style={{ width: '100%', height: '100%' }}
-                                        source={item.image}
-                                    />
-                                </TouchableOpacity>
-                            </View>
-                        );
-                    })}
-                </View>
-            </ScrollView>
-            <View style={[GlobalStyleSheet.container, { paddingBottom: 20, paddingHorizontal: 20 }]}>
-                <Button
-                    onPress={() => navigation.navigate('Setprice')}
-                    title="Next"
-                />
+              <Text style={[FONTS.font, { color: colors.text }]}>
+                No photo selected
+              </Text>
             </View>
-        </SafeAreaView>
-    )
-}
+          )}
+        </View>
+      </View>
+
+      {/* Toolbar */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 15,
+        }}
+      >
+        <Text
+          style={{
+            flex: 1,
+            ...FONTS.fontMedium,
+            ...FONTS.h5,
+            color: colors.title,
+          }}
+        >
+          Gallery ({images.length}/{MAX_PHOTOS})
+        </Text>
+
+        <TouchableOpacity onPress={onPickImages} style={{ padding: 10 }}>
+          <Image
+            style={{ height: 24, width: 24, tintColor: colors.title }}
+            source={IMAGES.camera}
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Thumbnails */}
+      <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={16}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {images.map((item, index) => {
+            const isActive = activeImage === item.uri;
+            const cellSize =
+              SIZES.width / 4 > SIZES.container
+                ? SIZES.container / 4
+                : SIZES.width / 4;
+
+            return (
+              <View
+                key={item.id ?? index}
+                style={{
+                  width: "25%",
+                  height: cellSize,
+                  padding: 1,
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => setActiveImage(item.uri)}
+                  onLongPress={() => removeImage(item.id, item.uri)}
+                  delayLongPress={250}
+                  activeOpacity={0.9}
+                  style={{
+                    flex: 1,
+                    borderWidth: isActive ? 2 : 0,
+                    borderColor: isActive ? COLORS.primary : "transparent",
+                  }}
+                >
+                  <Image
+                    style={{ width: "100%", height: "100%" }}
+                    source={{ uri: item.uri }}
+                  />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      {/* Footer */}
+      <View
+        style={[
+          GlobalStyleSheet.container,
+          { paddingBottom: 20, paddingHorizontal: 20 },
+        ]}
+      >
+        <Button onPress={goNext} title="Next" />
+      </View>
+    </SafeAreaView>
+  );
+};
 
 export default Uploadphoto;

@@ -1,413 +1,3 @@
-/*import React, { useEffect, useMemo, useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  SafeAreaView,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Platform,
-} from "react-native";
-import { useTheme } from "@react-navigation/native";
-import Header from "../../../layout/Header";
-import { GlobalStyleSheet } from "../../../constants/StyleSheet";
-import { FONTS } from "../../../constants/theme";
-import Button from "../../../components/Button/Button";
-
-// ---- helpers ----
-const API_BASE_URL = "https://qot.ug/api";
-const toTitleCase = (s = "") =>
-  s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-
-const InlinePicker = ({
-  value,
-  options = [],
-  placeholder,
-  onSelect,
-  colors,
-}) => {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <View style={{ marginBottom: 20 }}>
-      <TouchableOpacity
-        onPress={() => setOpen((v) => !v)}
-        activeOpacity={0.7}
-        style={[
-          GlobalStyleSheet.shadow2,
-          {
-            borderColor: colors.border,
-            padding: 12,
-            backgroundColor: colors.card,
-            minHeight: 48,
-            justifyContent: "center",
-          },
-        ]}
-      >
-        <Text
-          style={[FONTS.font, { color: value ? colors.title : colors.text }]}
-        >
-          {value || placeholder}
-        </Text>
-      </TouchableOpacity>
-
-      {open && (
-        <View
-          style={{
-            marginTop: 8,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          {options.map((opt) => (
-            <TouchableOpacity
-              key={String(opt.id)}
-              onPress={() => {
-                onSelect(opt.value);
-                setOpen(false);
-              }}
-              style={{
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                backgroundColor: colors.card,
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border,
-              }}
-            >
-              <Text style={[FONTS.font, { color: colors.title }]}>
-                {opt.value}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-};
-
-const Form = ({ navigation, route }) => {
-  const { colors } = useTheme();
-  const { subCategoryId, subCategorySlug } = route.params || {};
-
-  const [loading, setLoading] = useState(true);
-  const [fields, setFields] = useState([]); // API fields for this subcategory
-  const [values, setValues] = useState({}); // { [fieldId or name]: value }
-  const [errors, setErrors] = useState({}); // { [key]: message }
-
-  const fetchFields = useCallback(async () => {
-    try {
-      setLoading(true);
-      const url = `${API_BASE_URL}/categories/${subCategoryId}/fields`;
-      const res = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "Content-Language": "en",
-          "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-          "Content-Language": "en",
-          "X-AppType": "docs",
-        },
-      });
-      const json = await res.json();
-      const list = Array.isArray(json?.result) ? json.result : [];
-
-      // Initialize default values
-      const init = {};
-      list.forEach((f) => {
-        const key = f.id; // you can also use f.name
-        init[key] = f.default_value ?? "";
-      });
-
-      setFields(list);
-      setValues((prev) => ({ ...init, ...prev }));
-    } catch (e) {
-      // fail silently; you can toast here if you like
-    } finally {
-      setLoading(false);
-    }
-  }, [subCategoryId]);
-
-  useEffect(() => {
-    if (subCategoryId) fetchFields();
-    else setLoading(false);
-  }, [subCategoryId, fetchFields]);
-
-  const dynamicRequired = useMemo(
-    () => fields.filter((f) => Number(f.required) === 1),
-    [fields]
-  );
-
-  const updateValue = (key, val) => {
-    setValues((prev) => ({ ...prev, [key]: val }));
-    setErrors((prev) => ({ ...prev, [key]: undefined }));
-  };
-
-  const validate = () => {
-    const nextErrors = {};
-    // required dynamic fields
-    dynamicRequired.forEach((f) => {
-      const key = f.id;
-      if (!values[key] || String(values[key]).trim() === "") {
-        nextErrors[key] = `${f.name} is required`;
-      }
-    });
-    // your static required fields
-    if (!values["_title"] || String(values["_title"]).trim() === "") {
-      nextErrors["_title"] = "Ad title is required";
-    }
-    if (
-      !values["_description"] ||
-      String(values["_description"]).trim() === ""
-    ) {
-      nextErrors["_description"] = "Description is required";
-    }
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const handleNext = () => {
-    if (!validate()) return;
-    // Pack payload for the next step
-    const payload = {
-      subCategoryId,
-      subCategorySlug,
-      dynamicFields: fields.map((f) => ({
-        id: f.id,
-        name: f.name,
-        type: f.type,
-        value: values[f.id],
-      })),
-      title: values["_title"] || "",
-      description: values["_description"] || "",
-      // add other static fields if you keep some
-    };
-    navigation.navigate("Uploadphoto", { postData: payload });
-  };
-
-  return (
-    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-      <Header
-        title={toTitleCase(subCategorySlug || "Include some details")}
-        leftIcon={"back"}
-        titleLeft
-      />
-
-      {loading ? (
-        <View
-          style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-        >
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[FONTS.font, { color: colors.text, marginTop: 10 }]}>
-            Loading fields…
-          </Text>
-        </View>
-      ) : (
-        <>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <View
-              style={[
-                GlobalStyleSheet.container,
-                { marginTop: 10, flex: 1, paddingHorizontal: 20 },
-              ]}
-            >
-              {fields.map((f) => {
-                const key = f.id; // stable key
-                const label = toTitleCase(f.name || "");
-                if (f.type === "text") {
-                  return (
-                    <View key={key} style={{ marginBottom: 20 }}>
-                      <Text
-                        style={[
-                          FONTS.font,
-                          { color: colors.title, marginBottom: 8 },
-                        ]}
-                      >
-                        {label}
-                        {Number(f.required) === 1 ? " *" : ""}
-                      </Text>
-                      <TextInput
-                        value={values[key]}
-                        onChangeText={(t) => updateValue(key, t)}
-                        placeholder={label}
-                        placeholderTextColor={colors.text}
-                        style={[
-                          GlobalStyleSheet.shadow2,
-                          {
-                            borderColor: colors.border,
-                            padding: 10,
-                            backgroundColor: colors.card,
-                            height: 48,
-                          },
-                        ]}
-                      />
-                      {!!errors[key] && (
-                        <Text style={{ color: "crimson", marginTop: 6 }}>
-                          {errors[key]}
-                        </Text>
-                      )}
-                    </View>
-                  );
-                }
-
-                if (f.type === "select") {
-                  const options = Array.isArray(f.options) ? f.options : [];
-                  return (
-                    <View key={key} style={{ marginBottom: 10 }}>
-                      <Text
-                        style={[
-                          FONTS.font,
-                          { color: colors.title, marginBottom: 8 },
-                        ]}
-                      >
-                        {label}
-                        {Number(f.required) === 1 ? " *" : ""}
-                      </Text>
-                      <InlinePicker
-                        value={values[key]}
-                        options={options}
-                        placeholder={label}
-                        onSelect={(val) => updateValue(key, val)}
-                        colors={colors}
-                      />
-                      {!!errors[key] && (
-                        <Text style={{ color: "crimson", marginTop: 6 }}>
-                          {errors[key]}
-                        </Text>
-                      )}
-                    </View>
-                  );
-                }
-
-                // Fallback for any unsupported type -> simple text
-                return (
-                  <View key={key} style={{ marginBottom: 20 }}>
-                    <Text
-                      style={[
-                        FONTS.font,
-                        { color: colors.title, marginBottom: 8 },
-                      ]}
-                    >
-                      {label}
-                      {Number(f.required) === 1 ? " *" : ""}
-                    </Text>
-                    <TextInput
-                      value={values[key]}
-                      onChangeText={(t) => updateValue(key, t)}
-                      placeholder={label}
-                      placeholderTextColor={colors.text}
-                      style={[
-                        GlobalStyleSheet.shadow2,
-                        {
-                          borderColor: colors.border,
-                          padding: 10,
-                          backgroundColor: colors.card,
-                          height: 48,
-                        },
-                      ]}
-                    />
-                    {!!errors[key] && (
-                      <Text style={{ color: "crimson", marginTop: 6 }}>
-                        {errors[key]}
-                      </Text>
-                    )}
-                  </View>
-                );
-              })}
-
-              <View style={{ marginBottom: 10 }}>
-                <Text
-                  style={[FONTS.font, { color: colors.title, marginBottom: 8 }]}
-                >
-                  Ad Title *
-                </Text>
-                <TextInput
-                  value={values["_title"] || ""}
-                  onChangeText={(t) => updateValue("_title", t)}
-                  placeholder="Ad title *"
-                  placeholderTextColor={colors.text}
-                  style={[
-                    GlobalStyleSheet.shadow2,
-                    {
-                      borderColor: colors.border,
-                      padding: 10,
-                      backgroundColor: colors.card,
-                      height: 48,
-                    },
-                  ]}
-                />
-                {!!errors["_title"] && (
-                  <Text style={{ color: "crimson", marginTop: 6 }}>
-                    {errors["_title"]}
-                  </Text>
-                )}
-              </View>
-
-              <Text
-                style={[FONTS.font, { color: colors.title, marginBottom: 20 }]}
-              >
-                Mention the key features of your item (e.g. brand, model, age,
-                type)
-              </Text>
-
-              <View style={{ marginBottom: 10 }}>
-                <Text
-                  style={[FONTS.font, { color: colors.title, marginBottom: 8 }]}
-                >
-                  Description *
-                </Text>
-                <TextInput
-                  value={values["_description"] || ""}
-                  onChangeText={(t) => updateValue("_description", t)}
-                  placeholder="Describe what you are selling *"
-                  placeholderTextColor={colors.text}
-                  multiline
-                  numberOfLines={4}
-                  style={[
-                    GlobalStyleSheet.shadow2,
-                    {
-                      borderColor: colors.border,
-                      padding: 12,
-                      backgroundColor: colors.card,
-                      minHeight: 100,
-                      textAlignVertical: "top",
-                    },
-                  ]}
-                />
-                {!!errors["_description"] && (
-                  <Text style={{ color: "crimson", marginTop: 6 }}>
-                    {errors["_description"]}
-                  </Text>
-                )}
-              </View>
-
-              <Text
-                style={[FONTS.font, { color: colors.text, marginBottom: 10 }]}
-              >
-                * Required Fields
-              </Text>
-            </View>
-          </ScrollView>
-
-          <View
-            style={[
-              GlobalStyleSheet.container,
-              { paddingBottom: 20, paddingHorizontal: 20 },
-            ]}
-          >
-            <Button onPress={handleNext} title="Next" />
-          </View>
-        </>
-      )}
-    </SafeAreaView>
-  );
-};
-
-export default Form;
-*/
-
 import React, {
   useEffect,
   useMemo,
@@ -427,12 +17,14 @@ import {
   Platform,
   KeyboardAvoidingView,
   Keyboard,
+  FlatList,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
-import { FONTS } from "../../../constants/theme";
+import { COLORS, FONTS } from "../../../constants/theme";
 import Button from "../../../components/Button/Button";
+import InlinePicker from "../../Components/InlinePicker";
 
 const API_BASE_URL = "https://qot.ug/api";
 
@@ -466,73 +58,6 @@ const Chip = ({ label, active, onPress, colors }) => (
   </TouchableOpacity>
 );
 
-const InlinePicker = ({
-  value,
-  options = [],
-  placeholder,
-  onSelect,
-  colors,
-}) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <View style={{ marginBottom: 20 }}>
-      <TouchableOpacity
-        onPress={() => setOpen((v) => !v)}
-        activeOpacity={0.7}
-        style={[
-          GlobalStyleSheet.shadow2,
-          {
-            borderColor: colors.border,
-            padding: 12,
-            backgroundColor: colors.card,
-            minHeight: 48,
-            justifyContent: "center",
-          },
-        ]}
-      >
-        <Text
-          style={[FONTS.font, { color: value ? colors.title : colors.text }]}
-        >
-          {value || placeholder}
-        </Text>
-      </TouchableOpacity>
-
-      {open && (
-        <View
-          style={{
-            marginTop: 8,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 8,
-            overflow: "hidden",
-          }}
-        >
-          {options.map((opt) => (
-            <TouchableOpacity
-              key={String(opt.id)}
-              onPress={() => {
-                onSelect(opt.value);
-                setOpen(false);
-              }}
-              style={{
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                backgroundColor: colors.card,
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border,
-              }}
-            >
-              <Text style={[FONTS.font, { color: colors.title }]}>
-                {opt.value}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-};
-
 // OLX-like single row (circle on the left + label)
 const OlxRadioRow = ({ label, selected, onPress, colors }) => {
   const RADIO = 22;
@@ -562,7 +87,7 @@ const OlxRadioRow = ({ label, selected, onPress, colors }) => {
           height: RADIO,
           borderRadius: RADIO / 2,
           borderWidth: 2,
-          borderColor: selected ? colors.primary : colors.border,
+          borderColor: selected ? COLORS.primary : colors.border,
           alignItems: "center",
           justifyContent: "center",
           marginRight: 14,
@@ -575,7 +100,7 @@ const OlxRadioRow = ({ label, selected, onPress, colors }) => {
               width: DOT,
               height: DOT,
               borderRadius: DOT / 2,
-              backgroundColor: colors.primary,
+              backgroundColor: COLORS.primary,
             }}
           />
         ) : null}
@@ -647,7 +172,7 @@ const Pill = ({ label, selected, onPress, colors, role }) => (
       paddingHorizontal: 14,
       borderRadius: 999,
       borderWidth: 1,
-      borderColor: selected ? colors.primary : colors.border,
+      borderColor: selected ? COLORS.primary : colors.border,
       backgroundColor: colors.card, // never fills blue/grey
       marginRight: 10,
       marginBottom: 10,
@@ -656,7 +181,7 @@ const Pill = ({ label, selected, onPress, colors, role }) => (
   >
     <Text
       style={{
-        color: selected ? colors.primary : colors.title,
+        color: selected ? COLORS.primary : colors.title,
         fontSize: 14,
         fontWeight: selected ? "600" : "400",
       }}
@@ -706,7 +231,7 @@ const OlxCheckboxInlineGroup = ({
             onPress={onClear}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[FONTS.font, { color: colors.primary }]}>Clear</Text>
+            <Text style={[FONTS.font, { color: COLORS.primary }]}>Clear</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -989,7 +514,10 @@ const Form = ({ navigation, route }) => {
                         placeholder={`Select ${label}`}
                         onSelect={(val) => setVal(key, val)}
                         colors={colors}
+                        searchable={true}
+                        minSearchCount={5}
                       />
+
                       {!!errors[key] && (
                         <Text style={{ color: "crimson", marginTop: 6 }}>
                           {errors[key]}
