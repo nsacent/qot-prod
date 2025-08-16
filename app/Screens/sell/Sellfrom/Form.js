@@ -25,8 +25,11 @@ import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import { COLORS, FONTS } from "../../../constants/theme";
 import Button from "../../../components/Button/Button";
 import InlinePicker from "../../Components/InlinePicker";
+import DateInput from "../../Components/DateInput";
+import dayjs from "dayjs";
 
 const API_BASE_URL = "https://qot.ug/api";
+const toDate = (s) => (s ? dayjs(s, "YYYY-MM-DD").toDate() : undefined);
 
 // --------- helpers ----------
 const toTitleCase = (s = "") =>
@@ -363,20 +366,53 @@ const Form = ({ navigation, route }) => {
     setErrors((p) => ({ ...p, [key]: undefined }));
   };
 
+  const startDateField = fields.find(
+    (f) => f.type === "date" && /start/i.test(f.name || "")
+  );
+
+  const endDateField = fields.find(
+    (f) => f.type === "date" && /end/i.test(f.name || "")
+  );
+
   const validate = () => {
     const next = {};
+
+    // Required checks by dynamic field type
     dynamicRequired.forEach((f) => {
       const v = values[f.id];
-      if (f.type === "checkbox_multiple") {
-        if (!Array.isArray(v) || v.length === 0)
-          next[f.id] = `${f.name} is required`;
-      } else if (v === undefined || v === null || String(v).trim() === "") {
-        next[f.id] = `${f.name} is required`;
-      }
-      if (f.type === "number" && v && !/^\d+$/.test(String(v))) {
-        next[f.id] = `${f.name} must be a number`;
+
+      switch (f.type) {
+        case "checkbox_multiple":
+          if (!Array.isArray(v) || v.length === 0) {
+            next[f.id] = `${f.name} is required`;
+          }
+          break;
+
+        case "number":
+          if (v === undefined || v === null || String(v).trim() === "") {
+            next[f.id] = `${f.name} is required`;
+          } else if (!/^\d+(\.\d+)?$/.test(String(v))) {
+            next[f.id] = `${f.name} must be a number`;
+          }
+          break;
+
+        case "date":
+          if (v === undefined || v === null || String(v).trim() === "") {
+            next[f.id] = `${f.name} is required`;
+          } else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) {
+            next[f.id] = `${f.name} must be YYYY-MM-DD`;
+          }
+          break;
+
+        default:
+          if (v === undefined || v === null || String(v).trim() === "") {
+            next[f.id] = `${f.name} is required`;
+          }
+          break;
       }
     });
+
+    // Static fields
     if (!values["_title"] || String(values["_title"]).trim() === "") {
       next["_title"] = "Ad title is required";
     }
@@ -386,6 +422,64 @@ const Form = ({ navigation, route }) => {
     ) {
       next["_description"] = "Description is required";
     }
+
+    // Start/End date range consistency (only if both exist)
+    try {
+      const startField = fields.find(
+        (f) => f.type === "date" && /start/i.test(f.name || "")
+      );
+      const endField = fields.find(
+        (f) => f.type === "date" && /end/i.test(f.name || "")
+      );
+
+      if (startField && endField) {
+        const sv = values[startField.id];
+        const ev = values[endField.id];
+
+        // only compare when both are present and formatted correctly
+        if (
+          sv &&
+          ev &&
+          /^\d{4}-\d{2}-\d{2}$/.test(String(sv)) &&
+          /^\d{4}-\d{2}-\d{2}$/.test(String(ev))
+        ) {
+          const s = dayjs(sv, "YYYY-MM-DD");
+          const e = dayjs(ev, "YYYY-MM-DD");
+          if (e.isBefore(s, "day")) {
+            next[endField.id] = "End date cannot be before start date";
+          }
+        }
+      }
+    } catch (_) {
+      // no-op
+    }
+
+    // 👉 Add Start/End date range check here
+    const startDateField = fields.find(
+      (f) => f.type === "date" && /start/i.test(f.name || "")
+    );
+    const endDateField = fields.find(
+      (f) => f.type === "date" && /end/i.test(f.name || "")
+    );
+
+    if (startDateField && endDateField) {
+      const sv = values[startDateField.id];
+      const ev = values[endDateField.id];
+
+      if (
+        sv &&
+        ev &&
+        /^\d{4}-\d{2}-\d{2}$/.test(String(sv)) &&
+        /^\d{4}-\d{2}-\d{2}$/.test(String(ev))
+      ) {
+        const s = dayjs(sv, "YYYY-MM-DD");
+        const e = dayjs(ev, "YYYY-MM-DD");
+        if (e.isBefore(s, "day")) {
+          next[endDateField.id] = "End date cannot be before start date";
+        }
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -583,6 +677,37 @@ const Form = ({ navigation, route }) => {
                         </Text>
                       )}
                     </View>
+                  );
+                }
+
+                if (f.type === "date") {
+                  const key = f.id;
+                  const label = toTitleCase(f.name || "");
+
+                  // constrain End >= Start
+                  const isStart = startDateField?.id === key;
+                  const isEnd = endDateField?.id === key;
+
+                  const minDate = isEnd
+                    ? toDate(values[startDateField?.id])
+                    : undefined;
+                  // (optional) prevent picking a Start after an already chosen End:
+                  const maxDate = isStart
+                    ? toDate(values[endDateField?.id])
+                    : undefined;
+
+                  return (
+                    <DateInput
+                      key={key}
+                      label={label}
+                      value={values[key] || ""}
+                      onChange={(v) => setVal(key, v)}
+                      colors={colors}
+                      required={Number(f.required) === 1}
+                      errorText={errors[key]}
+                      minDate={minDate}
+                      maxDate={maxDate}
+                    />
                   );
                 }
 

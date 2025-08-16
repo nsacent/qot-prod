@@ -3,14 +3,10 @@ import React, { useEffect, useState, useContext, useMemo } from "react";
 import { View, ScrollView, ActivityIndicator, Text } from "react-native";
 import axios from "axios";
 import { useTheme } from "@react-navigation/native";
-import CardStyle1 from "../../components/Card/CardStyle2";
 import { IMAGES, COLORS, FONTS } from "../../constants/theme";
-import { AuthContext } from "../../context/AuthProvider";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
 import CardStyle2 from "../../components/Card/CardStyle2";
-
-const API_BASE_URL = "https://qot.ug/api";
-const APP_API_TOKEN = "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=";
+import postsService from "../../../src/services/postsService";
 
 const formatPrice = (price, currencyCode, fallback = "") => {
   const amount = parseFloat(price ?? 0);
@@ -40,19 +36,8 @@ const mapPostToCard = (post) => {
 
 const SimilarAds = ({ postId, perPage = 10 }) => {
   const { colors } = useTheme();
-  const { userToken } = useContext(AuthContext);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const headers = useMemo(
-    () => ({
-      Authorization: userToken ? `Bearer ${userToken}` : undefined,
-      "X-AppApiToken": APP_API_TOKEN,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    }),
-    [userToken]
-  );
 
   useEffect(() => {
     let mounted = true;
@@ -60,10 +45,14 @@ const SimilarAds = ({ postId, perPage = 10 }) => {
     const fetchSimilar = async () => {
       try {
         setLoading(true);
-        const url = `${API_BASE_URL}/posts?op=similar&postId=${encodeURIComponent(
-          postId
-        )}&perPage=${perPage}&embed=pictures,city`;
-        const { data } = await axios.get(url, { headers });
+
+        const payload = {
+          postId,
+          op: "similar",
+          embed: "pictures,city",
+          perPage,
+        };
+        const { data } = await postsService.posts.getSimilar(payload);
 
         // API may return either {result: {data: [...]}} or {result: [...]}
         const raw = data?.result?.data ?? data?.result ?? [];
@@ -85,7 +74,7 @@ const SimilarAds = ({ postId, perPage = 10 }) => {
     return () => {
       mounted = false;
     };
-  }, [postId, perPage, headers]);
+  }, [postId, perPage]);
 
   if (loading) {
     return (

@@ -16,27 +16,16 @@ import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import Button from "../../../components/Button/Button";
 
-// Seed/demo images — you can start empty: []
-const seedImages = [
-  { id: "1", uri: Image.resolveAssetSource(IMAGES.car1).uri, localAsset: true },
-  { id: "2", uri: Image.resolveAssetSource(IMAGES.car2).uri, localAsset: true },
-  { id: "3", uri: Image.resolveAssetSource(IMAGES.car3).uri, localAsset: true },
-  { id: "4", uri: Image.resolveAssetSource(IMAGES.car4).uri, localAsset: true },
-  { id: "5", uri: Image.resolveAssetSource(IMAGES.car5).uri, localAsset: true },
-  { id: "6", uri: Image.resolveAssetSource(IMAGES.car6).uri, localAsset: true },
-];
-
 const MAX_PHOTOS = 8;
 
 const Uploadphoto = ({ navigation }) => {
   const theme = useTheme();
   const { colors } = theme;
 
+  const [activeImage, setActiveImage] = useState("");
+
   // State
-  const [images, setImages] = useState(seedImages); // or [] if you want empty start
-  const [activeImage, setActiveImage] = useState(
-    seedImages.length ? seedImages[0].uri : null
-  );
+  const [images, setImages] = useState([]); // or [] if you want empty start
 
   // Derived
   const previewHeight = useMemo(() => {

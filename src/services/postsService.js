@@ -53,6 +53,8 @@ export const postsService = {
     });
   },
 
+  getSimilar: (params) => postsService.getAll({ ...params, op: "similar" }),
+
   getFavoriteById: (id, embed = {}) =>
     api.get(replaceParams(API_ENDPOINTS.FAVORITE.BY_ID, { id }), { embed }),
 
