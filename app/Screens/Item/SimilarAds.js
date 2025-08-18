@@ -1,7 +1,5 @@
-// app/components/SimilarAds.js
 import React, { useEffect, useState, useContext, useMemo } from "react";
 import { View, ScrollView, ActivityIndicator, Text } from "react-native";
-import axios from "axios";
 import { useTheme } from "@react-navigation/native";
 import { IMAGES, COLORS, FONTS } from "../../constants/theme";
 import { GlobalStyleSheet } from "../../constants/StyleSheet";
