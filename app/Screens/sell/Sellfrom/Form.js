@@ -501,6 +501,22 @@ const Form = ({ navigation, route }) => {
       })),
     };
 
+    /*navigation.navigate("Uploadphoto", {
+      baseForm: {
+        category_id: 1,
+        title: "Draft", // placeholder is fine
+        description: "Draft", // placeholder is fine
+        contact_name: userData?.name || "User",
+        auth_field: "email", // or "phone"
+        email: userData?.email, // if auth_field === "email"
+        phone: undefined, // if auth_field === "phone"
+        phone_country: undefined,
+        city_id: 8,
+        country_code: "UG",
+        price: 0,
+      },
+    });*/
+
     navigation.navigate("Uploadphoto", { postData: payload });
   };
 
