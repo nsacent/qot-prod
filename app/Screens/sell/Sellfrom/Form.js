@@ -4,6 +4,7 @@ import React, {
   useState,
   useCallback,
   useRef,
+  useContext,
 } from "react";
 import {
   View,
@@ -17,7 +18,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   Keyboard,
-  FlatList,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import Header from "../../../layout/Header";
@@ -26,6 +26,7 @@ import { COLORS, FONTS } from "../../../constants/theme";
 import Button from "../../../components/Button/Button";
 import InlinePicker from "../../Components/InlinePicker";
 import DateInput from "../../Components/DateInput";
+import { AuthContext } from "../../../context/AuthProvider";
 import dayjs from "dayjs";
 
 const API_BASE_URL = "https://qot.ug/api";
@@ -35,31 +36,25 @@ const toDate = (s) => (s ? dayjs(s, "YYYY-MM-DD").toDate() : undefined);
 const toTitleCase = (s = "") =>
   s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-const Chip = ({ label, active, onPress, colors }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    activeOpacity={0.8}
-    style={{
-      paddingVertical: 10,
-      paddingHorizontal: 14,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: active ? colors.primary : colors.border,
-      backgroundColor: active ? colors.primary + "22" : colors.card,
-      marginRight: 10,
-      marginBottom: 10,
-    }}
-  >
-    <Text
-      style={[
-        FONTS.font,
-        { color: active ? colors.primary : colors.title, fontSize: 14 },
-      ]}
-    >
-      {label}
-    </Text>
-  </TouchableOpacity>
-);
+// build clean CSV for API (drop empties, trim, dedupe, cap at 10)
+const normalizeTags = (raw) => {
+  if (!raw) return "";
+  const items = raw
+    .split(/[,\n]/g)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  // de-duplicate (case-insensitive)
+  const seen = new Set();
+  const uniq = [];
+  for (const t of items) {
+    const key = t.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniq.push(t);
+    }
+  }
+  return uniq.slice(0, 10).join(",");
+};
 
 // OLX-like single row (circle on the left + label)
 const OlxRadioRow = ({ label, selected, onPress, colors }) => {
@@ -83,7 +78,6 @@ const OlxRadioRow = ({ label, selected, onPress, colors }) => {
         Platform.OS === "ios" && pressed ? { opacity: 0.9 } : null,
       ]}
     >
-      {/* Left circular indicator */}
       <View
         style={{
           width: RADIO,
@@ -109,11 +103,8 @@ const OlxRadioRow = ({ label, selected, onPress, colors }) => {
         ) : null}
       </View>
 
-      {/* Label */}
       <Text
         style={{
-          // use your typography tokens if you want:
-          // ...FONTS.font,
           color: colors.title,
           fontSize: 16,
           fontWeight: selected ? "600" : "400",
@@ -125,7 +116,6 @@ const OlxRadioRow = ({ label, selected, onPress, colors }) => {
   );
 };
 
-// Group with carded container + dividers (very OLX-like)
 const OlxRadioGroup = ({ value, options = [], onChange, colors }) => {
   return (
     <View
@@ -163,29 +153,68 @@ const OlxRadioGroup = ({ value, options = [], onChange, colors }) => {
     </View>
   );
 };
-// Replace your existing Pill with this version
+
+// Inline "radio pills" (horizontal) — used for Post Type
+const InlineRadioPills = ({ value, options = [], onChange, colors }) => (
+  <View
+    accessibilityRole="radiogroup"
+    style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+  >
+    {options.map((opt) => {
+      const selected = value === opt.id;
+      return (
+        <Pressable
+          key={String(opt.id)}
+          onPress={() => onChange(opt.id)}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: selected }}
+          style={{
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: selected ? COLORS.primary : colors.border,
+            backgroundColor: colors.card,
+            marginRight: 8,
+            marginBottom: 8,
+          }}
+        >
+          <Text
+            style={{
+              color: selected ? COLORS.primary : colors.title,
+              fontSize: 14,
+              fontWeight: selected ? "600" : "400",
+            }}
+          >
+            {opt.label}
+          </Text>
+        </Pressable>
+      );
+    })}
+  </View>
+);
+
 const Pill = ({ label, selected, onPress, colors, role }) => (
   <Pressable
     onPress={onPress}
-    accessibilityRole={role} // "checkbox" | "radio"
+    accessibilityRole={role}
     accessibilityState={{ checked: selected, selected }}
-    // no android_ripple, no pressed-style → zero visual change on press
     style={{
-      paddingVertical: 10,
-      paddingHorizontal: 14,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
       borderRadius: 999,
       borderWidth: 1,
       borderColor: selected ? COLORS.primary : colors.border,
-      backgroundColor: colors.card, // never fills blue/grey
-      marginRight: 10,
-      marginBottom: 10,
+      backgroundColor: colors.card,
+      marginRight: 8,
+      marginBottom: 8,
     }}
     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
   >
     <Text
       style={{
         color: selected ? COLORS.primary : colors.title,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: selected ? "600" : "400",
       }}
     >
@@ -195,10 +224,10 @@ const Pill = ({ label, selected, onPress, colors, role }) => (
 );
 
 const OlxCheckboxInlineGroup = ({
-  values = [], // array of selected option values
-  options = [], // [{ id, value }]
-  onToggle, // (val) => void
-  onClear, // () => void
+  values = [],
+  options = [],
+  onToggle,
+  onClear,
   colors,
   FONTS,
   title = "Features",
@@ -214,7 +243,6 @@ const OlxCheckboxInlineGroup = ({
         backgroundColor: colors.card,
       }}
     >
-      {/* Header */}
       <View
         style={{
           flexDirection: "row",
@@ -239,7 +267,6 @@ const OlxCheckboxInlineGroup = ({
         ) : null}
       </View>
 
-      {/* Inline pills */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", padding: 12 }}>
         {options.map((opt) => {
           const checked = values.includes(opt.value);
@@ -263,17 +290,33 @@ const OlxCheckboxInlineGroup = ({
 const Form = ({ navigation, route }) => {
   const { colors } = useTheme();
 
-  // From Selllist: navigation.navigate("Form", { subCategoryId, subCategorySlug })
-  const { subCategoryId, subCategorySlug } = route.params || {};
+  // From Location and Selllist:
+  // navigation.navigate("Form", { subCategoryId, subCategorySlug, city_id, country_code })
+  const { subCategoryId, subCategorySlug, city_id, country_code } =
+    route.params || {};
 
   const [loading, setLoading] = useState(true);
   const [fields, setFields] = useState([]); // API fields array
-  const [values, setValues] = useState({}); // { [fieldId]: value | value[] }
-  const [errors, setErrors] = useState({}); // { [fieldId or _title/_description]: message }
+  const [values, setValues] = useState({
+    _tags: "", // NEW: raw tags input
+  }); // { [fieldId]: value | value[] }
+  const [errors, setErrors] = useState({}); // { [fieldId or _title/_description/_post_type_id]: message }
   const [headerH, setHeaderH] = useState(0);
   const scrollRef = useRef(null);
   const fieldY = useRef({}); // { [key]: y }
   const [kbH, setKbH] = useState(0);
+
+  const { userData } = useContext(AuthContext);
+
+  // NEW: fixed post type options & state (1 = Individual, 2 = Professional)
+  const POST_TYPE_OPTIONS = useMemo(
+    () => [
+      { id: 1, label: "Individual" },
+      { id: 2, label: "Professional" },
+    ],
+    []
+  );
+  const [postTypeId, setPostTypeId] = useState(null);
 
   useEffect(() => {
     const showEvt =
@@ -295,7 +338,6 @@ const Form = ({ navigation, route }) => {
   const scrollToField = (key) => {
     requestAnimationFrame(() => {
       const y = fieldY.current[key] ?? 0;
-      // offset so the label + input sit nicely above the keyboard
       scrollRef.current?.scrollTo({ y: Math.max(0, y - 90), animated: true });
     });
   };
@@ -316,16 +358,15 @@ const Form = ({ navigation, route }) => {
       const json = await res.json();
       const list = Array.isArray(json?.result) ? json.result : [];
 
-      // initialize values by type
       const init = {};
       list.forEach((f) => {
         const id = f.id;
         if (f.type === "checkbox_multiple") {
-          init[id] = []; // array of selected option values
+          init[id] = [];
         } else if (f.type === "number") {
           init[id] = f.default_value ? String(f.default_value) : "";
         } else if (f.type === "select" || f.type === "radio") {
-          init[id] = f.default_value || ""; // a single option value
+          init[id] = f.default_value || "";
         } else {
           init[id] = f.default_value || "";
         }
@@ -334,7 +375,7 @@ const Form = ({ navigation, route }) => {
       setFields(list);
       setValues((prev) => ({ ...init, ...prev }));
     } catch (e) {
-      // silently ignore for now (you can toast)
+      // ignore
     } finally {
       setLoading(false);
     }
@@ -369,7 +410,6 @@ const Form = ({ navigation, route }) => {
   const startDateField = fields.find(
     (f) => f.type === "date" && /start/i.test(f.name || "")
   );
-
   const endDateField = fields.find(
     (f) => f.type === "date" && /end/i.test(f.name || "")
   );
@@ -377,17 +417,15 @@ const Form = ({ navigation, route }) => {
   const validate = () => {
     const next = {};
 
-    // Required checks by dynamic field type
+    // Dynamic required fields
     dynamicRequired.forEach((f) => {
       const v = values[f.id];
-
       switch (f.type) {
         case "checkbox_multiple":
           if (!Array.isArray(v) || v.length === 0) {
             next[f.id] = `${f.name} is required`;
           }
           break;
-
         case "number":
           if (v === undefined || v === null || String(v).trim() === "") {
             next[f.id] = `${f.name} is required`;
@@ -395,7 +433,6 @@ const Form = ({ navigation, route }) => {
             next[f.id] = `${f.name} must be a number`;
           }
           break;
-
         case "date":
           if (v === undefined || v === null || String(v).trim() === "") {
             next[f.id] = `${f.name} is required`;
@@ -403,7 +440,6 @@ const Form = ({ navigation, route }) => {
             next[f.id] = `${f.name} must be YYYY-MM-DD`;
           }
           break;
-
         default:
           if (v === undefined || v === null || String(v).trim() === "") {
             next[f.id] = `${f.name} is required`;
@@ -423,20 +459,16 @@ const Form = ({ navigation, route }) => {
       next["_description"] = "Description is required";
     }
 
-    // Start/End date range consistency (only if both exist)
+    // NEW: Post type required
+    if (!postTypeId) {
+      next["_post_type_id"] = "Post type is required";
+    }
+
+    // Start/End date range consistency
     try {
-      const startField = fields.find(
-        (f) => f.type === "date" && /start/i.test(f.name || "")
-      );
-      const endField = fields.find(
-        (f) => f.type === "date" && /end/i.test(f.name || "")
-      );
-
-      if (startField && endField) {
-        const sv = values[startField.id];
-        const ev = values[endField.id];
-
-        // only compare when both are present and formatted correctly
+      if (startDateField && endDateField) {
+        const sv = values[startDateField.id];
+        const ev = values[endDateField.id];
         if (
           sv &&
           ev &&
@@ -446,84 +478,50 @@ const Form = ({ navigation, route }) => {
           const s = dayjs(sv, "YYYY-MM-DD");
           const e = dayjs(ev, "YYYY-MM-DD");
           if (e.isBefore(s, "day")) {
-            next[endField.id] = "End date cannot be before start date";
+            next[endDateField.id] = "End date cannot be before start date";
           }
         }
       }
-    } catch (_) {
-      // no-op
-    }
-
-    // 👉 Add Start/End date range check here
-    const startDateField = fields.find(
-      (f) => f.type === "date" && /start/i.test(f.name || "")
-    );
-    const endDateField = fields.find(
-      (f) => f.type === "date" && /end/i.test(f.name || "")
-    );
-
-    if (startDateField && endDateField) {
-      const sv = values[startDateField.id];
-      const ev = values[endDateField.id];
-
-      if (
-        sv &&
-        ev &&
-        /^\d{4}-\d{2}-\d{2}$/.test(String(sv)) &&
-        /^\d{4}-\d{2}-\d{2}$/.test(String(ev))
-      ) {
-        const s = dayjs(sv, "YYYY-MM-DD");
-        const e = dayjs(ev, "YYYY-MM-DD");
-        if (e.isBefore(s, "day")) {
-          next[endDateField.id] = "End date cannot be before start date";
-        }
-      }
-    }
+    } catch (_) {}
 
     setErrors(next);
+
+    if (Object.keys(next).length > 0) {
+      const firstKey =
+        Object.keys(next).find((k) => fieldY.current[k] != null) ||
+        (next["_post_type_id"] ? "_post_type_id" : "_title");
+      scrollToField(firstKey);
+    }
     return Object.keys(next).length === 0;
   };
 
   const handleNext = () => {
     if (!validate()) return;
 
-    const payload = {
-      subCategoryId,
-      subCategorySlug,
-      title: values["_title"] || "",
-      description: values["_description"] || "",
-      dynamicFields: fields.map((f) => ({
-        id: f.id,
-        name: f.name,
-        type: f.type,
-        // For checkboxes we keep an array of strings; others are strings
-        value: values[f.id],
-      })),
+    const tagsCsv = normalizeTags(values["_tags"]);
+
+    const baseForm = {
+      category_id: subCategoryId, // required
+      post_type_id: postTypeId, // 1 or 2
+      title: values["_title"],
+      description: values["_description"],
+      contact_name: userData?.name || "User",
+      auth_field: "email",
+      email: userData?.email,
+      phone: undefined,
+      phone_country: undefined,
+      city_id: Number(city_id) || 8, // use city from Location if provided
+      country_code: country_code || "UG",
+      price: 0,
+      ...(tagsCsv ? { tags: tagsCsv } : {}), // ← NEW
     };
 
-    /*navigation.navigate("Uploadphoto", {
-      baseForm: {
-        category_id: 1,
-        title: "Draft", // placeholder is fine
-        description: "Draft", // placeholder is fine
-        contact_name: userData?.name || "User",
-        auth_field: "email", // or "phone"
-        email: userData?.email, // if auth_field === "email"
-        phone: undefined, // if auth_field === "phone"
-        phone_country: undefined,
-        city_id: 8,
-        country_code: "UG",
-        price: 0,
-      },
-    });*/
-
-    navigation.navigate("Uploadphoto", { postData: payload });
+    navigation.navigate("Setprice", { baseForm });
   };
 
   // ----------- UI -----------
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-      {/* measure header height for iOS offset */}
       <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
         <Header
           title={toTitleCase(subCategorySlug || "Include some details")}
@@ -545,7 +543,7 @@ const Form = ({ navigation, route }) => {
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? headerH : 0} // if you already measure headerH
+          keyboardVerticalOffset={Platform.OS === "ios" ? headerH : 0}
         >
           <ScrollView
             ref={scrollRef}
@@ -560,6 +558,39 @@ const Form = ({ navigation, route }) => {
                 { marginTop: 10, paddingHorizontal: 20 },
               ]}
             >
+              {/* ---- NEW: Post Type (inline radios) ---- */}
+              <View
+                onLayout={(e) =>
+                  (fieldY.current["_post_type_id"] = e.nativeEvent.layout.y)
+                }
+                style={{ marginBottom: 16 }}
+              >
+                <Text
+                  style={[FONTS.font, { color: colors.title, marginBottom: 8 }]}
+                >
+                  Post Type *
+                </Text>
+
+                <InlineRadioPills
+                  value={postTypeId}
+                  options={[
+                    { id: 1, label: "Individual" },
+                    { id: 2, label: "Professional" },
+                  ]}
+                  onChange={(val) => {
+                    setPostTypeId(val);
+                    setErrors((p) => ({ ...p, _post_type_id: undefined }));
+                  }}
+                  colors={colors}
+                />
+
+                {!!errors["_post_type_id"] && (
+                  <Text style={{ color: "crimson", marginTop: 6 }}>
+                    {errors["_post_type_id"]}
+                  </Text>
+                )}
+              </View>
+
               {/* ---- Dynamic fields ---- */}
               {fields.map((f) => {
                 const key = f.id;
@@ -627,7 +658,6 @@ const Form = ({ navigation, route }) => {
                         searchable={true}
                         minSearchCount={5}
                       />
-
                       {!!errors[key] && (
                         <Text style={{ color: "crimson", marginTop: 6 }}>
                           {errors[key]}
@@ -699,15 +729,12 @@ const Form = ({ navigation, route }) => {
                 if (f.type === "date") {
                   const key = f.id;
                   const label = toTitleCase(f.name || "");
-
-                  // constrain End >= Start
                   const isStart = startDateField?.id === key;
                   const isEnd = endDateField?.id === key;
 
                   const minDate = isEnd
                     ? toDate(values[startDateField?.id])
                     : undefined;
-                  // (optional) prevent picking a Start after an already chosen End:
                   const maxDate = isStart
                     ? toDate(values[endDateField?.id])
                     : undefined;
@@ -727,7 +754,6 @@ const Form = ({ navigation, route }) => {
                   );
                 }
 
-                // Fallback
                 return (
                   <View key={key} style={{ marginBottom: 20 }}>
                     <Text
@@ -835,6 +861,80 @@ const Form = ({ navigation, route }) => {
                 )}
               </View>
 
+              {/* ---- NEW: Item Tags (optional) ---- */}
+              <View
+                onLayout={(e) =>
+                  (fieldY.current["_tags"] = e.nativeEvent.layout.y)
+                }
+                style={{ marginBottom: 12 }}
+              >
+                <Text
+                  style={[FONTS.font, { color: colors.title, marginBottom: 8 }]}
+                >
+                  Item Tags (optional)
+                </Text>
+                <TextInput
+                  value={values["_tags"] || ""}
+                  onChangeText={(t) => setVal("_tags", t)}
+                  placeholder="eg. car, automatic, 2010, low mileage"
+                  placeholderTextColor={colors.text}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[
+                    GlobalStyleSheet.shadow2,
+                    {
+                      borderColor: colors.border,
+                      padding: 10,
+                      backgroundColor: colors.card,
+                      height: 48,
+                    },
+                  ]}
+                />
+
+                {/* Preview chips */}
+                {normalizeTags(values["_tags"]).split(",").filter(Boolean)
+                  .length > 0 && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      marginTop: 8,
+                    }}
+                  >
+                    {normalizeTags(values["_tags"])
+                      .split(",")
+                      .filter(Boolean)
+                      .map((t, i) => (
+                        <Pill
+                          key={`${t}-${i}`}
+                          label={t}
+                          selected={false}
+                          onPress={() =>
+                            setVal(
+                              "_tags",
+                              (values["_tags"] || "")
+                                .split(/[,\n]/g)
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                                .filter(
+                                  (x) => x.toLowerCase() !== t.toLowerCase()
+                                )
+                                .join(", ")
+                            )
+                          }
+                          colors={colors}
+                        />
+                      ))}
+                  </View>
+                )}
+
+                <Text
+                  style={{ color: colors.text, fontSize: 12, marginTop: 6 }}
+                >
+                  Separate with commas. Up to 10 tags. Tap a chip to remove it.
+                </Text>
+              </View>
+
               <Text
                 style={[FONTS.font, { color: colors.text, marginBottom: 10 }]}
               >
@@ -842,7 +942,7 @@ const Form = ({ navigation, route }) => {
               </Text>
             </View>
 
-            {/* CTA inside ScrollView so it rises with keyboard */}
+            {/* CTA */}
             <View
               style={[
                 GlobalStyleSheet.container,

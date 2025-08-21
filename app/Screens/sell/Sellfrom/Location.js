@@ -1,117 +1,422 @@
-import React from 'react';
-import { View, Text, SafeAreaView, Image, TouchableOpacity } from 'react-native';
-import { useTheme } from '@react-navigation/native';
-import { COLORS, FONTS, IMAGES, SIZES } from '../../../constants/theme';
-import Header from '../../../layout/Header';
-import { GlobalStyleSheet } from '../../../constants/StyleSheet';
-import Button from '../../../components/Button/Button';
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  SafeAreaView,
+  Image,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+  FlatList,
+  Modal,
+  Alert,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTheme } from "@react-navigation/native";
+import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
+import Header from "../../../layout/Header";
+import { GlobalStyleSheet } from "../../../constants/StyleSheet";
+import Button from "../../../components/Button/Button";
 
+const API_BASE_URL = "https://qot.ug/api";
+const CITIES_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const COUNTRY_CODE_DEFAULT = "UG";
 
-const Location = ({ navigation }) => {
+const STORAGE_KEYS = {
+  cities: (cc) => `cities:${cc}`,
+  selectedCity: "selectedCity",
+};
 
-    const { colors } = useTheme();
-
-    return (
-
-        <SafeAreaView
-            style={{
-                flex: 1,
-                backgroundColor: colors.card,
-            }}
-        >
-            <Header
-                title="Location"
-                leftIcon={'back'}
-                titleLeft
-            />
-            <View 
-                style={[GlobalStyleSheet.container,{ 
-                    backgroundColor: COLORS.primaryLight, 
-                    padding: 20, 
-                    flexDirection: 'row', 
-                    alignItems: 'center', 
-                    paddingVertical: 30 
-                }]}
-            >
-                <Text style={{
-                    ...FONTS.fontSm,
-                    color: colors.title,
-                }}>
-                    Sharing accurate location helps you make a{"\n"} quicker sale
-                </Text>
-                <View style={{ position: "absolute", right: 20 }}>
-                    <Image
-                        style={{ height: 30, width: 30,tintColor:colors.title }}
-                        source={IMAGES.map}
-                    />
-                </View>
-            </View>
-            <View style={[GlobalStyleSheet.container, { paddingVertical: 30, paddingHorizontal: 20 }]}>
-                <Text style={{ ...FONTS.fontMedium, fontSize: 18, color: colors.title, textAlign: 'center' }}>What is the location of the car you are selling?</Text>
-            </View>
-
-            <View style={[GlobalStyleSheet.container, { flex: 1, paddingHorizontal: 20 }]}>
-                <TouchableOpacity
-                    style={{
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        padding: 10,
-                        alignItems: 'center',
-                        flexDirection: 'row',
-                        justifyContent: 'center',
-                        backgroundColor: colors.card,
-                        borderRadius: SIZES.radius,
-                        shadowColor: "rgba(0,0,0,.5)",
-                        shadowOffset: {
-                            width: 0,
-                            height: 5,
-                        },
-                        shadowOpacity: 0.34,
-                        shadowRadius: 6.27,
-                        elevation: 10,
-                    }}
-                >
-                    <Image
-                        source={IMAGES.mapgps}
-                        style={{ width: 15, height: 15, marginRight: 10,tintColor:colors.title}}
-                    />
-                    <Text style={{ ...FONTS.font, fontSize: 15, color: colors.title }}>Current location: RK puram,Kota</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={{
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        padding: 10,
-                        alignItems: 'center',
-                        flexDirection: 'row',
-                        justifyContent: 'center',
-                        backgroundColor: colors.card,
-                        borderRadius: SIZES.radius,
-                        shadowColor: "rgba(0,0,0,.5)",
-                        shadowOffset: {
-                            width: 0,
-                            height: 5,
-                        },
-                        shadowOpacity: 0.34,
-                        shadowRadius: 6.27,
-                        elevation: 10,
-                        marginTop: 20
-                    }}
-                >
-                    <Text style={{ ...FONTS.font, fontSize: 15, color: colors.title }}>Somewhere else</Text>
-                </TouchableOpacity>
-            </View>
-            <View style={[GlobalStyleSheet.container, { paddingHorizontal: 20 }]}>
-                <Button
-                    onPress={() => navigation.navigate('Form')}
-                    title={'Continue'}
-                />
-            </View>
-
-        </SafeAreaView>
-
-    )
+async function getCachedCities(countryCode) {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.cities(countryCode));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || !Array.isArray(parsed?.data)) return null;
+    if (Date.now() - parsed.ts > CITIES_TTL_MS) return null; // stale
+    return parsed.data;
+  } catch {
+    return null;
+  }
 }
+
+async function setCachedCities(countryCode, cities) {
+  try {
+    const payload = { ts: Date.now(), data: cities };
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.cities(countryCode),
+      JSON.stringify(payload)
+    );
+  } catch {}
+}
+
+async function loadSelectedCity() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.selectedCity);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSelectedCity(city) {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.selectedCity, JSON.stringify(city));
+  } catch {}
+}
+
+// Try two common endpoints: /countries/{cc}/cities then fallback /cities?country_code=CC
+const HEADERS = {
+  Accept: "application/json",
+  "Content-Type": "application/json",
+  "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
+  "Content-Language": "en",
+  "X-AppType": "docs",
+};
+
+function normalizeCitiesPayload(json) {
+  // Your response shape:
+  // { success, message, result: { data: [ { id, name, ... } ], links, meta } }
+  let arr =
+    (json?.result && Array.isArray(json.result.data) && json.result.data) ||
+    (Array.isArray(json?.data) && json.data) ||
+    (Array.isArray(json?.result) && json.result) ||
+    [];
+
+  // Map to the shape we use in UI/caching
+  return arr
+    .map((c) => ({
+      id: c.id ?? c.code ?? c.city_id ?? c.value,
+      name: c.name ?? c.city ?? c.text ?? String(c.id || ""),
+      latitude: c.latitude ?? null,
+      longitude: c.longitude ?? null,
+      time_zone: c.time_zone ?? null,
+      country_code: c.country_code ?? null,
+      subadmin1_code: c.subadmin1_code ?? null,
+      subadmin2_code: c.subadmin2_code ?? null,
+    }))
+    .filter((c) => c.id && c.name);
+}
+
+async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
+  // ask for many at once; your sample shows all 75 on page 1
+  const url = `${API_BASE_URL}/countries/${countryCode}/cities?page=1&perPage=100`;
+
+  // 1) primary (your documented endpoint)
+  try {
+    const res = await fetch(url, { headers: HEADERS });
+    if (res.ok) {
+      const json = await res.json();
+      const list = normalizeCitiesPayload(json);
+      if (list.length) return list;
+    }
+  } catch (_) {}
+
+  // 2) fallback (older shape some installs expose)
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/cities?country_code=${encodeURIComponent(countryCode)}`,
+      { headers: HEADERS }
+    );
+    if (res.ok) {
+      const json = await res.json();
+      const list = normalizeCitiesPayload(json);
+      if (list.length) return list;
+    }
+  } catch (_) {}
+
+  throw new Error("Could not load cities");
+}
+
+const Location = ({ navigation, route }) => {
+  const { colors } = useTheme();
+  const countryCode = route?.params?.country_code || COUNTRY_CODE_DEFAULT;
+
+  const [loading, setLoading] = useState(true);
+  const [cities, setCities] = useState([]); // [{id,name}]
+  const [query, setQuery] = useState("");
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [selectedCity, setSelectedCity] = useState(null);
+  const [error, setError] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return cities;
+    return cities.filter((c) => c.name.toLowerCase().includes(q));
+  }, [cities, query]);
+
+  const ensureCities = useCallback(async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const cached = await getCachedCities(countryCode);
+      if (cached?.length) {
+        setCities(cached);
+      } else {
+        const fresh = await fetchCitiesFromApi(countryCode);
+        setCities(fresh);
+        setCachedCities(countryCode, fresh);
+      }
+      const saved = await loadSelectedCity();
+      if (saved?.id && saved?.name) setSelectedCity(saved);
+    } catch (e) {
+      setError("Failed to load cities. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [countryCode]);
+
+  useEffect(() => {
+    ensureCities();
+  }, [ensureCities]);
+
+  const openPicker = () => {
+    if (!cities.length && !loading) {
+      ensureCities();
+    }
+    setPickerVisible(true);
+  };
+
+  const pickCity = async (city) => {
+    setSelectedCity(city);
+    await saveSelectedCity(city);
+    setPickerVisible(false);
+  };
+
+  const onContinue = () => {
+    if (!selectedCity?.id) {
+      Alert.alert("Select a city", "Please choose a city to continue.");
+      return;
+    }
+    navigation.navigate("Review", {
+      city_id: selectedCity.id,
+      city_name: selectedCity.name,
+      country_code: countryCode,
+    });
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
+      <Header title="Location" leftIcon={"back"} titleLeft />
+
+      <View
+        style={[
+          GlobalStyleSheet.container,
+          {
+            backgroundColor: COLORS.primaryLight,
+            padding: 20,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingVertical: 30,
+          },
+        ]}
+      >
+        <Text style={{ ...FONTS.fontSm, color: colors.title }}>
+          Sharing accurate location helps you make a{"\n"}quicker sale
+        </Text>
+        <View style={{ position: "absolute", right: 20 }}>
+          <Image
+            style={{ height: 30, width: 30, tintColor: colors.title }}
+            source={IMAGES.map}
+          />
+        </View>
+      </View>
+
+      <View
+        style={[
+          GlobalStyleSheet.container,
+          { paddingVertical: 30, paddingHorizontal: 20 },
+        ]}
+      >
+        <Text
+          style={{
+            ...FONTS.fontMedium,
+            fontSize: 18,
+            color: colors.title,
+            textAlign: "center",
+          }}
+        >
+          What is the location of the car you are selling?
+        </Text>
+      </View>
+
+      <View
+        style={[GlobalStyleSheet.container, { flex: 1, paddingHorizontal: 20 }]}
+      >
+        {/* Selected / Current city card */}
+        <TouchableOpacity
+          onPress={openPicker}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 10,
+            alignItems: "center",
+            flexDirection: "row",
+            justifyContent: "center",
+            backgroundColor: colors.card,
+            borderRadius: SIZES.radius,
+            shadowColor: "rgba(0,0,0,.5)",
+            shadowOffset: { width: 0, height: 5 },
+            shadowOpacity: 0.34,
+            shadowRadius: 6.27,
+            elevation: 10,
+          }}
+        >
+          <Image
+            source={IMAGES.mapgps}
+            style={{
+              width: 15,
+              height: 15,
+              marginRight: 10,
+              tintColor: colors.title,
+            }}
+          />
+          <Text style={{ ...FONTS.font, fontSize: 15, color: colors.title }}>
+            {selectedCity?.name
+              ? `Selected city: ${selectedCity.name}`
+              : "Tap to choose your city"}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Choose somewhere else (also opens picker) */}
+        <TouchableOpacity
+          onPress={openPicker}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: 10,
+            alignItems: "center",
+            flexDirection: "row",
+            justifyContent: "center",
+            backgroundColor: colors.card,
+            borderRadius: SIZES.radius,
+            shadowColor: "rgba(0,0,0,.5)",
+            shadowOffset: { width: 0, height: 5 },
+            shadowOpacity: 0.34,
+            shadowRadius: 6.27,
+            elevation: 10,
+            marginTop: 20,
+          }}
+        >
+          <Text style={{ ...FONTS.font, fontSize: 15, color: colors.title }}>
+            Choose another city
+          </Text>
+        </TouchableOpacity>
+
+        {!!error && (
+          <Text
+            style={{ color: "crimson", marginTop: 12, textAlign: "center" }}
+          >
+            {error}
+          </Text>
+        )}
+      </View>
+
+      <View style={[GlobalStyleSheet.container, { paddingHorizontal: 20 }]}>
+        <Button onPress={onContinue} title={"Continue"} />
+      </View>
+
+      {/* City Picker Modal */}
+      <Modal visible={pickerVisible} animationType="slide" transparent>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.2)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.card,
+              maxHeight: "75%",
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: 24,
+            }}
+          >
+            <View
+              style={{
+                height: 5,
+                width: 48,
+                backgroundColor: colors.border,
+                borderRadius: 3,
+                alignSelf: "center",
+                marginBottom: 12,
+              }}
+            />
+
+            <Text
+              style={{
+                ...FONTS.fontMedium,
+                color: colors.title,
+                fontSize: 18,
+                marginBottom: 8,
+              }}
+            >
+              Select City
+            </Text>
+
+            <TextInput
+              placeholder="Search city..."
+              placeholderTextColor={colors.text}
+              value={query}
+              onChangeText={setQuery}
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 44,
+                color: colors.title,
+                marginBottom: 10,
+              }}
+            />
+
+            {loading ? (
+              <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+                <Text style={{ marginTop: 8, color: colors.text }}>
+                  Loading cities…
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filtered}
+                keyExtractor={(item) => String(item.id)}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    onPress={() => pickCity(item)}
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ color: colors.title, fontSize: 16 }}>
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View style={{ paddingVertical: 24, alignItems: "center" }}>
+                    <Text style={{ color: colors.text }}>No cities found.</Text>
+                  </View>
+                }
+                style={{ maxHeight: "100%" }}
+              />
+            )}
+
+            <View style={{ marginTop: 14 }}>
+              <Button title="Close" onPress={() => setPickerVisible(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+};
 
 export default Location;
