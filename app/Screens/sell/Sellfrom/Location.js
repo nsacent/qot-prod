@@ -27,6 +27,7 @@ const STORAGE_KEYS = {
   selectedCity: "selectedCity",
 };
 
+// ---------- AsyncStorage helpers ----------
 async function getCachedCities(countryCode) {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.cities(countryCode));
@@ -65,7 +66,7 @@ async function saveSelectedCity(city) {
   } catch {}
 }
 
-// Try two common endpoints: /countries/{cc}/cities then fallback /cities?country_code=CC
+// ---------- API helpers ----------
 const HEADERS = {
   Accept: "application/json",
   "Content-Type": "application/json",
@@ -75,15 +76,14 @@ const HEADERS = {
 };
 
 function normalizeCitiesPayload(json) {
-  // Your response shape:
-  // { success, message, result: { data: [ { id, name, ... } ], links, meta } }
+  // Expected shape from your sample:
+  // { success, result: { data: [ { id, name, ... } ] } }
   let arr =
     (json?.result && Array.isArray(json.result.data) && json.result.data) ||
     (Array.isArray(json?.data) && json.data) ||
     (Array.isArray(json?.result) && json.result) ||
     [];
 
-  // Map to the shape we use in UI/caching
   return arr
     .map((c) => ({
       id: c.id ?? c.code ?? c.city_id ?? c.value,
@@ -99,10 +99,10 @@ function normalizeCitiesPayload(json) {
 }
 
 async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
-  // ask for many at once; your sample shows all 75 on page 1
-  const url = `${API_BASE_URL}/countries/${countryCode}/cities?page=1&perPage=100`;
+  // Your sample returns all 75 on page 1; per_page defaults to 100 on that API
+  const url = `${API_BASE_URL}/countries/${countryCode}/cities?page=1`;
 
-  // 1) primary (your documented endpoint)
+  // Primary endpoint
   try {
     const res = await fetch(url, { headers: HEADERS });
     if (res.ok) {
@@ -112,7 +112,7 @@ async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
     }
   } catch (_) {}
 
-  // 2) fallback (older shape some installs expose)
+  // Fallback (if some deployments expose /cities?country_code=X)
   try {
     const res = await fetch(
       `${API_BASE_URL}/cities?country_code=${encodeURIComponent(countryCode)}`,
@@ -128,9 +128,16 @@ async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
   throw new Error("Could not load cities");
 }
 
+// ---------- Component ----------
 const Location = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const countryCode = route?.params?.country_code || COUNTRY_CODE_DEFAULT;
+
+  // Expecting { baseForm?, country_code? } from Setprice
+  const incomingBase = route?.params?.draft || {};
+  const countryCode =
+    route?.params?.country_code ||
+    incomingBase?.country_code ||
+    COUNTRY_CODE_DEFAULT;
 
   const [loading, setLoading] = useState(true);
   const [cities, setCities] = useState([]); // [{id,name}]
@@ -157,6 +164,8 @@ const Location = ({ navigation, route }) => {
         setCities(fresh);
         setCachedCities(countryCode, fresh);
       }
+
+      // Prefill from last selection if available
       const saved = await loadSelectedCity();
       if (saved?.id && saved?.name) setSelectedCity(saved);
     } catch (e) {
@@ -188,17 +197,24 @@ const Location = ({ navigation, route }) => {
       Alert.alert("Select a city", "Please choose a city to continue.");
       return;
     }
-    navigation.navigate("Review", {
+
+    // Merge city into baseForm and move to Review
+    const payload = {
+      ...incomingBase,
       city_id: selectedCity.id,
-      city_name: selectedCity.name,
       country_code: countryCode,
-    });
+      // optional for display in next screen
+      city_name: selectedCity.name,
+    };
+
+    navigation.navigate("Uploadphoto", { draft: payload });
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
       <Header title="Location" leftIcon={"back"} titleLeft />
 
+      {/* Top banner */}
       <View
         style={[
           GlobalStyleSheet.container,
@@ -222,6 +238,7 @@ const Location = ({ navigation, route }) => {
         </View>
       </View>
 
+      {/* Title */}
       <View
         style={[
           GlobalStyleSheet.container,
@@ -236,14 +253,15 @@ const Location = ({ navigation, route }) => {
             textAlign: "center",
           }}
         >
-          What is the location of the car you are selling?
+          What is the location of the item you are selling?
         </Text>
       </View>
 
+      {/* Body */}
       <View
         style={[GlobalStyleSheet.container, { flex: 1, paddingHorizontal: 20 }]}
       >
-        {/* Selected / Current city card */}
+        {/* Selected city card */}
         <TouchableOpacity
           onPress={openPicker}
           style={{
@@ -278,7 +296,7 @@ const Location = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Choose somewhere else (also opens picker) */}
+        {/* Choose another city */}
         <TouchableOpacity
           onPress={openPicker}
           style={{
@@ -304,14 +322,18 @@ const Location = ({ navigation, route }) => {
         </TouchableOpacity>
 
         {!!error && (
-          <Text
-            style={{ color: "crimson", marginTop: 12, textAlign: "center" }}
-          >
-            {error}
-          </Text>
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: "crimson", textAlign: "center" }}>
+              {error}
+            </Text>
+            <View style={{ marginTop: 10, alignItems: "center" }}>
+              <Button title="Retry" onPress={ensureCities} />
+            </View>
+          </View>
         )}
       </View>
 
+      {/* Footer CTA */}
       <View style={[GlobalStyleSheet.container, { paddingHorizontal: 20 }]}>
         <Button onPress={onContinue} title={"Continue"} />
       </View>

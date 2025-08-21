@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useContext } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -6,34 +6,43 @@ import {
   Image,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
+  Platform,
+  ScrollView,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import { ScrollView } from "react-native-gesture-handler";
 import { useTheme } from "@react-navigation/native";
+import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
 import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
-import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
 import Button from "../../../components/Button/Button";
-import { AuthContext } from "../../../context/AuthProvider";
 
-// ✅ your service
-import { createPostWithImages } from "../../../../src/services/postApi";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 
 const MAX_PHOTOS = 8;
 
+const getPickerMediaTypes = () => {
+  if (ImagePicker?.MediaType?.Images) return [ImagePicker.MediaType.Images]; // new API
+  return ImagePicker.MediaTypeOptions.Images; // old API
+};
+
+const FP_DIR = FileSystem.cacheDirectory + "image-fp/";
+
 const Uploadphoto = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { userToken } = useContext(AuthContext);
 
-  // All non-image fields must be provided by previous steps
-  const baseForm = route?.params?.baseForm || {};
+  // carry all previously collected data forward
+  const {
+    draft: {
+      baseForm = {}, // includes: category_id, post_type_id, title, description, price, negotiable, city_id, country_code, etc
+      dynamicValues = {}, // cf values object from Form screen
+      fieldsMeta = [], // optional meta for pretty labels in Review
+      tags, // array<string> or comma string
+    },
+  } = route?.params || {};
 
+  const [images, setImages] = useState([]); // [{id, uri, name?, type?, assetKey}]
   const [activeImage, setActiveImage] = useState("");
-  const [images, setImages] = useState([]); // [{ id, uri }]
-  const [busy, setBusy] = useState(false);
 
-  // preview height
   const previewHeight = useMemo(() => {
     const base =
       SIZES.width > SIZES.container
@@ -42,64 +51,152 @@ const Uploadphoto = ({ navigation, route }) => {
     return base;
   }, []);
 
-  // --- helpers ----------------------------------------------------
-  const requestPerms = async () => {
+  const requestMediaLibraryPermission = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
         "Permission needed",
-        "We need access to your photos to upload."
+        "We need access to your photos to let you upload."
       );
       return false;
     }
     return true;
   };
 
-  // quick required checks before publish
-  const validateBaseForm = (form) => {
-    const missing = [];
-    if (!form.category_id) missing.push("category_id");
-    if (!form.post_type_id) missing.push("post_type_id");
-    if (!form.title) missing.push("title");
-    if (!form.description) missing.push("description");
-    if (!form.contact_name) missing.push("contact_name");
-    if (!form.city_id) missing.push("city_id");
-    if (!form.country_code) missing.push("country_code");
-    if (!form.auth_field) missing.push("auth_field");
-    if (form.auth_field === "email" && !form.email) missing.push("email");
-    if (form.auth_field === "phone") {
-      if (!form.phone) missing.push("phone");
-      if (!form.phone_country) missing.push("phone_country");
+  const normalizeUri = (u = "") => {
+    try {
+      const uri = String(u);
+      // strip query/hash & lower-case scheme
+      const [path] = uri.split(/[?#]/);
+      return path.replace(/^file:\/\//i, "").trim();
+    } catch {
+      return u || "";
     }
-    if (form.price == null || form.price === "") missing.push("price");
-    // optional booleans we normalize later: negotiable, phone_hidden, etc.
-    return { ok: missing.length === 0, missing };
   };
 
-  // --- image picking (no network here) ----------------------------
+  const ensureFpDir = async () => {
+    try {
+      const info = await FileSystem.getInfoAsync(FP_DIR);
+      if (!info.exists)
+        await FileSystem.makeDirectoryAsync(FP_DIR, { intermediates: true });
+    } catch {}
+  };
+
+  const safeName = (s = "") => s.replace(/[^\w.-]+/g, "_").slice(0, 60);
+
+  const copyToCacheForHash = async (uri, name = "img") => {
+    try {
+      await ensureFpDir();
+      const dest =
+        FP_DIR +
+        Date.now() +
+        "_" +
+        Math.random().toString(36).slice(2) +
+        "_" +
+        safeName(name);
+      await FileSystem.copyAsync({ from: uri, to: dest });
+      return dest;
+    } catch {
+      return null;
+    }
+  };
+
+  const fingerprintAsset = async (asset) => {
+    // 1) Most reliable on iOS
+    if (asset?.assetId) return `asset:${asset.assetId}`;
+
+    // 2) Try MD5/size on original URI
+    try {
+      const info = await FileSystem.getInfoAsync(asset?.uri, { md5: true });
+      if (info?.exists && (info?.md5 || Number.isFinite(info?.size))) {
+        return `md5:${info.md5 || "x"}|size:${info.size || 0}`;
+      }
+    } catch {}
+
+    // 3) If original is content:// (Android), copy to cache then hash
+    try {
+      const cached = await copyToCacheForHash(
+        asset?.uri,
+        asset?.fileName || asset?.filename || "photo.jpg"
+      );
+      if (cached) {
+        const info = await FileSystem.getInfoAsync(cached, { md5: true });
+        if (info?.exists && (info?.md5 || Number.isFinite(info?.size))) {
+          return `md5:${info.md5 || "x"}|size:${info.size || 0}`;
+        }
+      }
+    } catch {}
+
+    // 4) Last resort: combine weak signals
+    const name = asset?.fileName || asset?.filename || "";
+    const wh = `${asset?.width || 0}x${asset?.height || 0}`;
+    return `fallback:${safeName(name)}|${wh}`;
+  };
+
   const onPickImages = async () => {
-    if (!(await requestPerms())) return;
+    const ok = await requestMediaLibraryPermission();
+    if (!ok) return;
 
-    const remaining = Math.max(0, MAX_PHOTOS - images.length);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images, // ✅ non-deprecated
-      allowsMultipleSelection: true,
-      quality: 0.85,
-      selectionLimit: remaining > 0 ? remaining : 1,
-    });
-    if (result.canceled) return;
+    try {
+      const remaining = Math.max(0, MAX_PHOTOS - images.length);
+      if (remaining === 0) {
+        Alert.alert("Limit reached", `You can add up to ${MAX_PHOTOS} photos.`);
+        return;
+      }
 
-    const picked = (result.assets || []).slice(0, remaining);
-    if (!picked.length) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: getPickerMediaTypes(),
+        allowsMultipleSelection: true,
+        selectionLimit: remaining, // iOS/web (ignored on Android but fine)
+        quality: 0.9,
+      });
+      if (result.canceled) return;
 
-    const stamped = picked.map((a, idx) => ({
-      id: `picked-${Date.now()}-${idx}`,
-      uri: a.uri,
-    }));
+      const picked = result.assets || [];
 
-    const newGallery = [...images, ...stamped].slice(0, MAX_PHOTOS);
-    setImages(newGallery);
-    if (!activeImage && stamped[0]) setActiveImage(stamped[0].uri);
+      // Build an existing fingerprints set (covers prior picks)
+      const existing = new Set(
+        images.map((it) => it.fingerprint || it.assetKey || it.uri)
+      );
+
+      // Compute fingerprints for the new batch in parallel
+      const enriched = await Promise.all(
+        picked.map(async (a) => {
+          const fp = await fingerprintAsset(a);
+          return {
+            id: `picked-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            uri: a.uri,
+            name: a.fileName || a.filename || "photo.jpg",
+            type: a.mimeType || "image/jpeg",
+            width: a.width,
+            height: a.height,
+            fingerprint: fp,
+          };
+        })
+      );
+
+      // Dedupe both against existing and within this batch
+      const seenThisBatch = new Set();
+      const unique = [];
+      for (const a of enriched) {
+        if (existing.has(a.fingerprint) || seenThisBatch.has(a.fingerprint))
+          continue;
+        seenThisBatch.add(a.fingerprint);
+        unique.push(a);
+      }
+
+      if (!unique.length) {
+        Alert.alert("Already selected", "Those photo(s) were already added.");
+        return;
+      }
+
+      const next = [...images, ...unique].slice(0, MAX_PHOTOS);
+      setImages(next);
+      if (!activeImage && next.length) setActiveImage(next[0].uri);
+    } catch (e) {
+      console.log("Image pick error:", e);
+      Alert.alert("Error", "Could not open your gallery. Please try again.");
+    }
   };
 
   const removeImage = (id, uri) => {
@@ -119,44 +216,21 @@ const Uploadphoto = ({ navigation, route }) => {
     ]);
   };
 
-  // --- final publish ----------------------------------------------
-  const onPublish = async () => {
-    // validate fields
-    const { ok, missing } = validateBaseForm(baseForm);
-    if (!ok) {
-      Alert.alert(
-        "Missing info",
-        `Please provide: ${missing.join(", ")} on previous steps.`
-      );
+  const goNext = () => {
+    if (!images.length) {
+      Alert.alert("No photos", "Please add at least one photo to continue.");
       return;
     }
-    if (images.length === 0) {
-      Alert.alert("Add photos", "Please add at least one photo.");
-      return;
-    }
-
-    try {
-      setBusy(true);
-      // You said you want to create only now (last step):
-      // send **all fields + pictures** in one call.
-      const postId = await createPostWithImages(userToken, baseForm, images);
-
-      Alert.alert("Success", "Your listing was created.", [
-        // TODO: change 'Home' to whatever makes sense in your app
-        { text: "OK", onPress: () => navigation.navigate("Home") },
-      ]);
-    } catch (e) {
-      const payload = e?.response?.data || e?.message;
-      console.log("Create failed:", payload);
-      Alert.alert(
-        "Publish failed",
-        typeof payload === "string"
-          ? payload
-          : "Server rejected the request. Please review required fields and try again."
-      );
-    } finally {
-      setBusy(false);
-    }
+    navigation.navigate("Review", {
+      draft: {
+        baseForm,
+        dynamicValues,
+        fieldsMeta,
+        tags,
+        photos: images,
+      },
+      primary: activeImage || images[0].uri,
+    });
   };
 
   return (
@@ -217,18 +291,9 @@ const Uploadphoto = ({ navigation, route }) => {
           Gallery ({images.length}/{MAX_PHOTOS})
         </Text>
 
-        <TouchableOpacity
-          onPress={onPickImages}
-          style={{ padding: 10 }}
-          disabled={busy}
-        >
+        <TouchableOpacity onPress={onPickImages} style={{ padding: 10 }}>
           <Image
-            style={{
-              height: 24,
-              width: 24,
-              tintColor: colors.title,
-              opacity: busy ? 0.5 : 1,
-            }}
+            style={{ height: 24, width: 24, tintColor: colors.title }}
             source={IMAGES.camera}
           />
         </TouchableOpacity>
@@ -246,7 +311,7 @@ const Uploadphoto = ({ navigation, route }) => {
 
             return (
               <View
-                key={item.id ?? item.uri ?? index}
+                key={item.id ?? index}
                 style={{
                   width: "25%",
                   height: cellSize,
@@ -282,19 +347,7 @@ const Uploadphoto = ({ navigation, route }) => {
           { paddingBottom: 20, paddingHorizontal: 20 },
         ]}
       >
-        <Button
-          onPress={onPublish}
-          title={busy ? "Publishing…" : "Publish"}
-          disabled={busy}
-        />
-        {busy && (
-          <View style={{ marginTop: 8, alignItems: "center" }}>
-            <ActivityIndicator size="small" color={COLORS.primary} />
-            <Text style={{ marginTop: 6, color: colors.text, fontSize: 12 }}>
-              Creating your listing…
-            </Text>
-          </View>
-        )}
+        <Button onPress={goNext} title="Next" />
       </View>
     </SafeAreaView>
   );

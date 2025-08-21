@@ -1,238 +1,225 @@
-import React, { useState, useContext } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  SafeAreaView,
   View,
   Text,
-  SafeAreaView,
   TextInput,
   Pressable,
-  ActivityIndicator,
-  Alert,
-  TouchableWithoutFeedback,
   Keyboard,
   Platform,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import Header from "../../../layout/Header";
-import { COLORS, FONTS, SIZES } from "../../../constants/theme";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
+import { COLORS, FONTS, SIZES } from "../../../constants/theme";
 import Button from "../../../components/Button/Button";
-import { AuthContext } from "../../../context/AuthProvider";
-import { updatePostFields } from "../../../../src/services/postApi";
-
-// tiny checkbox
-const Checkbox = ({ checked, onToggle, colors }) => (
-  <Pressable
-    onPress={onToggle}
-    accessibilityRole="checkbox"
-    accessibilityState={{ checked }}
-    style={{
-      width: 20,
-      height: 20,
-      borderRadius: 4,
-      borderWidth: 2,
-      borderColor: checked ? COLORS.primary : colors.border,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: checked ? COLORS.primary : "transparent",
-    }}
-  >
-    {checked ? (
-      <Text style={{ color: "#fff", fontSize: 14, lineHeight: 16 }}>✓</Text>
-    ) : null}
-  </Pressable>
-);
 
 const Setprice = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { userToken } = useContext(AuthContext);
 
-  const { postId, baseForm } = route?.params || {};
-  const [price, setPrice] = useState(
+  // Expecting: { baseForm, nextScreen? }
+  const baseForm = route?.params?.draft || {};
+  const nextScreen = route?.params?.nextScreen || "Location"; // change if your flow differs
+
+  const [priceText, setPriceText] = useState(
     baseForm?.price != null ? String(baseForm.price) : ""
   );
-  // 1 (yes) / 0 (no)
-  const [negotiable, setNegotiable] = useState(
-    baseForm?.negotiable === 1 || baseForm?.negotiable === true ? 1 : 0
-  );
-
-  const [saving, setSaving] = useState(false);
+  const [negotiable, setNegotiable] = useState(!!baseForm?.negotiable);
   const [error, setError] = useState("");
 
-  const onChangePrice = (t) => {
-    // allow digits and a single decimal point
-    const cleaned = t.replace(/[^\d.]/g, "");
-    const parts = cleaned.split(".");
-    const normalized =
-      parts.length > 2 ? `${parts[0]}.${parts.slice(1).join("")}` : cleaned;
-    setPrice(normalized);
-  };
+  const priceInt = useMemo(() => {
+    // API expects integer (UGX). Strip non-digits and parse.
+    const cleaned = (priceText || "").replace(/[^\d]/g, "");
+    return cleaned ? parseInt(cleaned, 10) : NaN;
+  }, [priceText]);
 
   const validate = () => {
+    if (!priceText.trim()) {
+      setError("Price is required.");
+      return false;
+    }
+    if (!Number.isFinite(priceInt) || priceInt <= 0) {
+      setError("Enter a valid price (positive number).");
+      return false;
+    }
     setError("");
-    if (price === "" || isNaN(Number(price))) {
-      setError("Enter a valid price (numbers only).");
-      return false;
-    }
-    if (Number(price) < 0) {
-      setError("Price cannot be negative.");
-      return false;
-    }
     return true;
   };
 
-  const onNext = async () => {
-    Keyboard.dismiss();
+  const onNext = () => {
     if (!validate()) return;
 
     const payload = {
-      price: Number(price),
-      negotiable: negotiable === 1,
+      ...baseForm,
+      // integer UGX for API
+      price: priceInt,
+      // many Laravel APIs accept 1/0 in form-data for booleans
+      negotiable: negotiable ? 1 : 0,
     };
 
-    try {
-      setSaving(true);
-      if (postId && userToken) {
-        await updatePostFields(userToken, postId, payload);
-      }
-      navigation.navigate("Review", {
-        postId,
-        baseForm: { ...(baseForm || {}), ...payload },
-      });
-    } catch (e) {
-      const msg =
-        e?.response?.data?.message || "Could not save price. Please try again.";
-      Alert.alert("Save failed", msg);
-    } finally {
-      setSaving(false);
-    }
+    navigation.navigate(nextScreen, { draft: payload });
   };
 
+  // tap anywhere to dismiss keyboard
+  const dismiss = () => Keyboard.dismiss();
+
   return (
-    <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
-      <Header title="Set a price for your item" leftIcon={"back"} titleLeft />
+    <Pressable
+      style={{ flex: 1, backgroundColor: colors.card }}
+      onPress={dismiss}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
+        <Header title="Set a price for your item" leftIcon="back" titleLeft />
 
-      {/* Tap anywhere to dismiss keyboard */}
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <View style={{ flex: 1 }}>
-          <View style={[GlobalStyleSheet.container, { flex: 1 }]}>
-            <Text
-              style={[
-                FONTS.fontMedium,
-                { color: colors.title, marginBottom: 6 },
-              ]}
-            >
-              Price <Text style={{ color: "crimson" }}>*</Text>
-            </Text>
+        <View
+          style={[
+            GlobalStyleSheet.container,
+            { flex: 1, paddingHorizontal: 20 },
+          ]}
+        >
+          <Text
+            style={[
+              FONTS.fontMedium,
+              {
+                color: colors.title,
+                marginTop: 14,
+                marginBottom: 8,
+                fontSize: 18,
+              },
+            ]}
+          >
+            Price
+          </Text>
 
-            {/* INPUT GROUP */}
+          {/* Input group: [ UGX | ________ | Negotiable ] */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+              borderRadius: SIZES.radius,
+              shadowColor: "rgba(0,0,0,.5)",
+              shadowOffset: { width: 0, height: 5 },
+              shadowOpacity: 0.2,
+              shadowRadius: 6.27,
+              elevation: 8,
+              paddingLeft: 12,
+              paddingRight: 6,
+              height: 52,
+            }}
+          >
+            {/* Prefix */}
             <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                borderRightWidth: 1,
+                borderRightColor: colors.border,
+                marginRight: 8,
+              }}
+            >
+              <Text style={[FONTS.fontMedium, { color: colors.title }]}>
+                UGX
+              </Text>
+            </View>
+
+            {/* Numeric input */}
+            <TextInput
+              value={priceText}
+              onChangeText={(t) => {
+                setPriceText(t);
+                if (error) setError("");
+              }}
+              placeholder="eg 150000"
+              placeholderTextColor={colors.text}
+              keyboardType={Platform.OS === "ios" ? "number-pad" : "numeric"}
+              returnKeyType="done"
+              onSubmitEditing={dismiss}
+              style={{
+                flex: 1,
+                color: colors.title,
+                paddingVertical: 10,
+                paddingRight: 8,
+              }}
+            />
+
+            {/* Negotiable toggle (acts like input-group addon) */}
+            <Pressable
+              onPress={() => setNegotiable((v) => !v)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                borderWidth: 1,
-                borderColor: colors.border,
+                borderLeftWidth: 1,
+                borderLeftColor: colors.border,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
                 borderRadius: SIZES.radius,
-                backgroundColor: colors.card,
-                overflow: "hidden",
               }}
             >
-              {/* left addon: UGX */}
               <View
                 style={{
-                  paddingHorizontal: 12,
-                  height: 48,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  borderWidth: 1.5,
+                  borderColor: negotiable ? COLORS.primary : colors.border,
+                  backgroundColor: negotiable ? COLORS.primary : "transparent",
                   alignItems: "center",
                   justifyContent: "center",
-                  borderRightWidth: 1,
-                  borderRightColor: colors.border,
+                  marginRight: 8,
                 }}
               >
-                <Text style={[FONTS.fontMedium, { color: colors.title }]}>
-                  UGX
-                </Text>
+                {negotiable ? (
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 12,
+                      lineHeight: 12,
+                      fontWeight: "700",
+                    }}
+                  >
+                    ✓
+                  </Text>
+                ) : null}
               </View>
-
-              {/* middle: price input */}
-              <TextInput
-                value={price}
-                onChangeText={onChangePrice}
-                placeholder="eg 15000"
-                placeholderTextColor={colors.text}
-                keyboardType={Platform.select({
-                  ios: "decimal-pad",
-                  android: "numeric",
-                })}
-                inputMode="decimal"
-                returnKeyType="done"
-                blurOnSubmit
-                onSubmitEditing={Keyboard.dismiss}
-                style={{
-                  flex: 1,
-                  height: 48,
-                  paddingHorizontal: 12,
-                  color: colors.title,
-                }}
-              />
-
-              {/* right addon: Negotiable checkbox */}
-              <Pressable
-                onPress={() => {
-                  Keyboard.dismiss();
-                  setNegotiable((v) => (v === 1 ? 0 : 1));
-                }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingHorizontal: 12,
-                  height: 48,
-                  borderLeftWidth: 1,
-                  borderLeftColor: colors.border,
-                  gap: 8,
-                }}
+              <Text
+                style={[
+                  FONTS.font,
+                  {
+                    color: negotiable ? COLORS.primary : colors.title,
+                    fontWeight: negotiable ? "600" : "400",
+                  },
+                ]}
               >
-                <Checkbox
-                  checked={negotiable === 1}
-                  onToggle={() => {
-                    Keyboard.dismiss();
-                    setNegotiable((v) => (v === 1 ? 0 : 1));
-                  }}
-                  colors={colors}
-                />
-                <Text style={[FONTS.font, { color: colors.title }]}>
-                  Negotiable
-                </Text>
-              </Pressable>
-            </View>
-
-            {!!error && (
-              <Text style={{ color: "crimson", marginTop: 8 }}>{error}</Text>
-            )}
-
-            <Text style={{ color: colors.text, fontSize: 12, marginTop: 8 }}>
-              Toggle negotiable if you’re open to offers.
-            </Text>
+                Negotiable
+              </Text>
+            </Pressable>
           </View>
 
-          <View
-            style={[
-              GlobalStyleSheet.container,
-              { paddingBottom: 20, paddingHorizontal: 20 },
-            ]}
-          >
-            <Button
-              onPress={onNext}
-              title={saving ? "Saving…" : "Next"}
-              disabled={saving}
-            />
-            {saving && (
-              <View style={{ marginTop: 8, alignItems: "center" }}>
-                <ActivityIndicator size="small" color={COLORS.primary} />
-              </View>
-            )}
-          </View>
+          {!!error && (
+            <Text style={{ color: "crimson", marginTop: 8 }}>{error}</Text>
+          )}
+
+          <Text style={[FONTS.font, { color: colors.text, marginTop: 10 }]}>
+            Tip: You can mark the price as negotiable. Serious buyers may still
+            ask for a better deal—pricing realistically improves conversions.
+          </Text>
         </View>
-      </TouchableWithoutFeedback>
-    </SafeAreaView>
+
+        {/* Footer CTA */}
+        <View
+          style={[
+            GlobalStyleSheet.container,
+            { paddingBottom: 20, paddingHorizontal: 20 },
+          ]}
+        >
+          <Button title="Next" onPress={onNext} />
+        </View>
+      </SafeAreaView>
+    </Pressable>
   );
 };
 

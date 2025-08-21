@@ -7,15 +7,14 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
 import Header from "../../../layout/Header";
 import { FONTS } from "../../../constants/theme";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ApiService } from "../../../../src/services/api";
 
-const API_BASE_URL = "https://qot.ug/api";
 // per-parent cache key: qot.subcats.<parentId>.v1
 const subkey = (parentId) => `qot.subcats.${parentId}.v1`;
 const TTL = 24 * 60 * 60 * 1000; // 24h
@@ -63,18 +62,16 @@ const Selllist = ({ route, navigation }) => {
       setFetchError(null);
       // Strategy that matches the response you pasted:
       // GET /categories?embed=children → find the parent by id and read .children
-      const res = await fetch(`${API_BASE_URL}/categories?embed=children`, {
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "Content-Language": "en",
-          "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-          "Content-Language": "en",
-          "X-AppType": "docs",
-        },
-      });
-      const json = await res.json();
-      const list = json?.result?.data ?? [];
+
+      // This becomes GET /categories?embed=children
+      const { data } = await ApiService.getCategories({ embed: "children" });
+
+      const list = Array.isArray(data?.result?.data)
+        ? data.result.data
+        : Array.isArray(data?.result)
+        ? data.result
+        : [];
+
       const parent = list.find((c) =>
         catId ? Number(c.id) === Number(catId) : c.slug === cat
       );
