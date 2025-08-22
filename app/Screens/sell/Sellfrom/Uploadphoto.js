@@ -6,7 +6,6 @@ import {
   Image,
   TouchableOpacity,
   Alert,
-  Platform,
   ScrollView,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
@@ -18,22 +17,27 @@ import Button from "../../../components/Button/Button";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 
+// 👉 pull in patchBase from your draft context
+import { useListingDraft } from "../../../context/ListingDraftContext";
+
 const MAX_PHOTOS = 8;
 
 const getPickerMediaTypes = () => {
-  if (ImagePicker?.MediaType?.Images) return [ImagePicker.MediaType.Images]; // new API
-  return ImagePicker.MediaTypeOptions.Images; // old API
+  // Prefer the new API (array of MediaType)
+  if (ImagePicker?.MediaType?.Images) return [ImagePicker.MediaType.Images];
+  // Fallback for older SDKs
+  return ImagePicker.MediaTypeOptions?.Images;
 };
 
 const FP_DIR = FileSystem.cacheDirectory + "image-fp/";
 
-const Uploadphoto = ({ navigation, route }) => {
+const Uploadphoto = ({ navigation }) => {
   const { colors } = useTheme();
 
-  // carry all previously collected data forward
-  const baseForm = route?.params?.baseForm;
+  // use patchBase from context
+  const { patchBase } = useListingDraft();
 
-  const [images, setImages] = useState([]); // [{id, uri, name?, type?, assetKey}]
+  const [images, setImages] = useState([]); // [{id, uri, name?, type?, fingerprint}]
   const [activeImage, setActiveImage] = useState("");
 
   const previewHeight = useMemo(() => {
@@ -54,17 +58,6 @@ const Uploadphoto = ({ navigation, route }) => {
       return false;
     }
     return true;
-  };
-
-  const normalizeUri = (u = "") => {
-    try {
-      const uri = String(u);
-      // strip query/hash & lower-case scheme
-      const [path] = uri.split(/[?#]/);
-      return path.replace(/^file:\/\//i, "").trim();
-    } catch {
-      return u || "";
-    }
   };
 
   const ensureFpDir = async () => {
@@ -95,10 +88,8 @@ const Uploadphoto = ({ navigation, route }) => {
   };
 
   const fingerprintAsset = async (asset) => {
-    // 1) Most reliable on iOS
     if (asset?.assetId) return `asset:${asset.assetId}`;
 
-    // 2) Try MD5/size on original URI
     try {
       const info = await FileSystem.getInfoAsync(asset?.uri, { md5: true });
       if (info?.exists && (info?.md5 || Number.isFinite(info?.size))) {
@@ -106,7 +97,6 @@ const Uploadphoto = ({ navigation, route }) => {
       }
     } catch {}
 
-    // 3) If original is content:// (Android), copy to cache then hash
     try {
       const cached = await copyToCacheForHash(
         asset?.uri,
@@ -120,7 +110,6 @@ const Uploadphoto = ({ navigation, route }) => {
       }
     } catch {}
 
-    // 4) Last resort: combine weak signals
     const name = asset?.fileName || asset?.filename || "";
     const wh = `${asset?.width || 0}x${asset?.height || 0}`;
     return `fallback:${safeName(name)}|${wh}`;
@@ -140,19 +129,15 @@ const Uploadphoto = ({ navigation, route }) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: getPickerMediaTypes(),
         allowsMultipleSelection: true,
-        selectionLimit: remaining, // iOS/web (ignored on Android but fine)
+        selectionLimit: remaining, // best-effort on Android
         quality: 0.9,
       });
       if (result.canceled) return;
 
       const picked = result.assets || [];
 
-      // Build an existing fingerprints set (covers prior picks)
-      const existing = new Set(
-        images.map((it) => it.fingerprint || it.assetKey || it.uri)
-      );
+      const existing = new Set(images.map((it) => it.fingerprint || it.uri));
 
-      // Compute fingerprints for the new batch in parallel
       const enriched = await Promise.all(
         picked.map(async (a) => {
           const fp = await fingerprintAsset(a);
@@ -168,7 +153,6 @@ const Uploadphoto = ({ navigation, route }) => {
         })
       );
 
-      // Dedupe both against existing and within this batch
       const seenThisBatch = new Set();
       const unique = [];
       for (const a of enriched) {
@@ -214,13 +198,15 @@ const Uploadphoto = ({ navigation, route }) => {
       Alert.alert("No photos", "Please add at least one photo to continue.");
       return;
     }
-    navigation.navigate("Review", {
-      baseForm: {
-        ...baseForm,
-        photos: images,
-        primary: activeImage || images[0].uri,
-      },
+
+    // ✅ store into the draft using patchBase
+    patchBase({
+      photos: images,
+      primary: activeImage || images[0].uri,
     });
+
+    // then move on
+    navigation.navigate("Review");
   };
 
   return (

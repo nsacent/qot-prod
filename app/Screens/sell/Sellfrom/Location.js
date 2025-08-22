@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -17,6 +23,7 @@ import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
 import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import Button from "../../../components/Button/Button";
+import { useListingDraft } from "../../../context/ListingDraftContext";
 
 const API_BASE_URL = "https://qot.ug/api";
 const CITIES_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -27,20 +34,26 @@ const STORAGE_KEYS = {
   selectedCity: "selectedCity",
 };
 
-// ---------- AsyncStorage helpers ----------
+const HEADERS = {
+  Accept: "application/json",
+  "Content-Type": "application/json",
+  "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
+  "Content-Language": "en",
+  "X-AppType": "docs",
+};
+
 async function getCachedCities(countryCode) {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.cities(countryCode));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.ts || !Array.isArray(parsed?.data)) return null;
-    if (Date.now() - parsed.ts > CITIES_TTL_MS) return null; // stale
+    if (Date.now() - parsed.ts > CITIES_TTL_MS) return null;
     return parsed.data;
   } catch {
     return null;
   }
 }
-
 async function setCachedCities(countryCode, cities) {
   try {
     const payload = { ts: Date.now(), data: cities };
@@ -50,7 +63,6 @@ async function setCachedCities(countryCode, cities) {
     );
   } catch {}
 }
-
 async function loadSelectedCity() {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.selectedCity);
@@ -59,25 +71,13 @@ async function loadSelectedCity() {
     return null;
   }
 }
-
 async function saveSelectedCity(city) {
   try {
     await AsyncStorage.setItem(STORAGE_KEYS.selectedCity, JSON.stringify(city));
   } catch {}
 }
 
-// ---------- API helpers ----------
-const HEADERS = {
-  Accept: "application/json",
-  "Content-Type": "application/json",
-  "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=",
-  "Content-Language": "en",
-  "X-AppType": "docs",
-};
-
 function normalizeCitiesPayload(json) {
-  // Expected shape from your sample:
-  // { success, result: { data: [ { id, name, ... } ] } }
   let arr =
     (json?.result && Array.isArray(json.result.data) && json.result.data) ||
     (Array.isArray(json?.data) && json.data) ||
@@ -91,7 +91,7 @@ function normalizeCitiesPayload(json) {
       latitude: c.latitude ?? null,
       longitude: c.longitude ?? null,
       time_zone: c.time_zone ?? null,
-      country_code: c.country_code ?? null,
+      country_code: c.country_code ?? COUNTRY_CODE_DEFAULT,
       subadmin1_code: c.subadmin1_code ?? null,
       subadmin2_code: c.subadmin2_code ?? null,
     }))
@@ -99,20 +99,17 @@ function normalizeCitiesPayload(json) {
 }
 
 async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
-  // Your sample returns all 75 on page 1; per_page defaults to 100 on that API
-  const url = `${API_BASE_URL}/countries/${countryCode}/cities?page=1`;
-
-  // Primary endpoint
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(
+      `${API_BASE_URL}/countries/${countryCode}/cities?page=1&perPage=100`,
+      { headers: HEADERS }
+    );
     if (res.ok) {
       const json = await res.json();
       const list = normalizeCitiesPayload(json);
       if (list.length) return list;
     }
-  } catch (_) {}
-
-  // Fallback (if some deployments expose /cities?country_code=X)
+  } catch {}
   try {
     const res = await fetch(
       `${API_BASE_URL}/cities?country_code=${encodeURIComponent(countryCode)}`,
@@ -123,25 +120,28 @@ async function fetchCitiesFromApi(countryCode = COUNTRY_CODE_DEFAULT) {
       const list = normalizeCitiesPayload(json);
       if (list.length) return list;
     }
-  } catch (_) {}
-
+  } catch {}
   throw new Error("Could not load cities");
 }
 
-// ---------- Component ----------
 const Location = ({ navigation, route }) => {
   const { colors } = useTheme();
+  const { draft, patchBase } = useListingDraft();
 
-  // Expecting { baseForm?, country_code? } from Setprice
-  const baseForm = route?.params?.baseForm || {};
-  const countryCode = COUNTRY_CODE_DEFAULT;
+  const countryCode =
+    route?.params?.country_code ||
+    draft.baseForm?.country_code ||
+    COUNTRY_CODE_DEFAULT;
 
   const [loading, setLoading] = useState(true);
-  const [cities, setCities] = useState([]); // [{id,name}]
+  const [cities, setCities] = useState([]);
   const [query, setQuery] = useState("");
   const [pickerVisible, setPickerVisible] = useState(false);
   const [selectedCity, setSelectedCity] = useState(null);
   const [error, setError] = useState("");
+
+  // hydrate only once to avoid loops
+  const didHydrateRef = useRef(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -154,37 +154,50 @@ const Location = ({ navigation, route }) => {
     setLoading(true);
     try {
       const cached = await getCachedCities(countryCode);
-      if (cached?.length) {
-        setCities(cached);
-      } else {
-        const fresh = await fetchCitiesFromApi(countryCode);
-        setCities(fresh);
-        setCachedCities(countryCode, fresh);
+      let list = cached;
+      if (!cached || !cached.length) {
+        list = await fetchCitiesFromApi(countryCode);
+        setCachedCities(countryCode, list);
       }
+      setCities(list || []);
 
-      // Prefill from last selection if available
-      const saved = await loadSelectedCity();
-      if (saved?.id && saved?.name) setSelectedCity(saved);
+      // hydrate selection once:
+      if (!didHydrateRef.current) {
+        didHydrateRef.current = true;
+
+        // 1) from draft if present
+        if (draft.baseForm?.city_id) {
+          const match = (list || []).find(
+            (c) => Number(c.id) === Number(draft.baseForm.city_id)
+          );
+          if (match)
+            setSelectedCity((prev) => (prev?.id === match.id ? prev : match));
+        } else {
+          // 2) from saved AsyncStorage
+          const saved = await loadSelectedCity();
+          if (saved?.id && saved?.name) {
+            setSelectedCity((prev) => (prev?.id === saved.id ? prev : saved));
+          }
+        }
+      }
     } catch (e) {
       setError("Failed to load cities. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, [countryCode]);
+  }, [countryCode, draft.baseForm?.city_id]);
 
   useEffect(() => {
     ensureCities();
   }, [ensureCities]);
 
   const openPicker = () => {
-    if (!cities.length && !loading) {
-      ensureCities();
-    }
+    if (!cities.length && !loading) ensureCities();
     setPickerVisible(true);
   };
 
   const pickCity = async (city) => {
-    setSelectedCity(city);
+    setSelectedCity((prev) => (prev?.id === city?.id ? prev : city));
     await saveSelectedCity(city);
     setPickerVisible(false);
   };
@@ -194,25 +207,36 @@ const Location = ({ navigation, route }) => {
       Alert.alert("Select a city", "Please choose a city to continue.");
       return;
     }
-
-    // Merge city into baseForm and move to Review
-
-    navigation.navigate("Uploadphoto", {
-      baseForm: {
-        ...baseForm,
-        city_id: selectedCity.id,
-        country_code: countryCode,
-        // optional for display in next screen
-        city_name: selectedCity.name,
-      },
+    // write to context (no effect loops here)
+    patchBase({
+      city_id: selectedCity.id,
+      country_code:
+        selectedCity.country_code || countryCode || COUNTRY_CODE_DEFAULT,
     });
+
+    navigation.navigate("Uploadphoto");
+  };
+
+  const cardStyle = {
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    backgroundColor: colors.card,
+    borderRadius: SIZES.radius,
+    shadowColor: "rgba(0,0,0,.5)",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.34,
+    shadowRadius: 6.27,
+    elevation: 10,
   };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.card }}>
       <Header title="Location" leftIcon={"back"} titleLeft />
 
-      {/* Top banner */}
       <View
         style={[
           GlobalStyleSheet.container,
@@ -236,7 +260,6 @@ const Location = ({ navigation, route }) => {
         </View>
       </View>
 
-      {/* Title */}
       <View
         style={[
           GlobalStyleSheet.container,
@@ -251,33 +274,14 @@ const Location = ({ navigation, route }) => {
             textAlign: "center",
           }}
         >
-          What is the location of the item you are selling?
+          What is the location of the car you are selling?
         </Text>
       </View>
 
-      {/* Body */}
       <View
         style={[GlobalStyleSheet.container, { flex: 1, paddingHorizontal: 20 }]}
       >
-        {/* Selected city card */}
-        <TouchableOpacity
-          onPress={openPicker}
-          style={{
-            borderWidth: 1,
-            borderColor: colors.border,
-            padding: 10,
-            alignItems: "center",
-            flexDirection: "row",
-            justifyContent: "center",
-            backgroundColor: colors.card,
-            borderRadius: SIZES.radius,
-            shadowColor: "rgba(0,0,0,.5)",
-            shadowOffset: { width: 0, height: 5 },
-            shadowOpacity: 0.34,
-            shadowRadius: 6.27,
-            elevation: 10,
-          }}
-        >
+        <TouchableOpacity onPress={openPicker} style={cardStyle}>
           <Image
             source={IMAGES.mapgps}
             style={{
@@ -294,25 +298,9 @@ const Location = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
 
-        {/* Choose another city */}
         <TouchableOpacity
           onPress={openPicker}
-          style={{
-            borderWidth: 1,
-            borderColor: colors.border,
-            padding: 10,
-            alignItems: "center",
-            flexDirection: "row",
-            justifyContent: "center",
-            backgroundColor: colors.card,
-            borderRadius: SIZES.radius,
-            shadowColor: "rgba(0,0,0,.5)",
-            shadowOffset: { width: 0, height: 5 },
-            shadowOpacity: 0.34,
-            shadowRadius: 6.27,
-            elevation: 10,
-            marginTop: 20,
-          }}
+          style={[cardStyle, { marginTop: 20 }]}
         >
           <Text style={{ ...FONTS.font, fontSize: 15, color: colors.title }}>
             Choose another city
@@ -320,23 +308,18 @@ const Location = ({ navigation, route }) => {
         </TouchableOpacity>
 
         {!!error && (
-          <View style={{ marginTop: 12 }}>
-            <Text style={{ color: "crimson", textAlign: "center" }}>
-              {error}
-            </Text>
-            <View style={{ marginTop: 10, alignItems: "center" }}>
-              <Button title="Retry" onPress={ensureCities} />
-            </View>
-          </View>
+          <Text
+            style={{ color: "crimson", marginTop: 12, textAlign: "center" }}
+          >
+            {error}
+          </Text>
         )}
       </View>
 
-      {/* Footer CTA */}
       <View style={[GlobalStyleSheet.container, { paddingHorizontal: 20 }]}>
         <Button onPress={onContinue} title={"Continue"} />
       </View>
 
-      {/* City Picker Modal */}
       <Modal visible={pickerVisible} animationType="slide" transparent>
         <View
           style={{
@@ -366,7 +349,6 @@ const Location = ({ navigation, route }) => {
                 marginBottom: 12,
               }}
             />
-
             <Text
               style={{
                 ...FONTS.fontMedium,
