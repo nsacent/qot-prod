@@ -523,29 +523,24 @@ const Form = ({ navigation, route }) => {
     // Build custom fields payload
     const cf = buildCfFromValues(fields, values);
 
-    const baseForm = {
-      category_id: subCategoryId, // category / subcategory id
-      post_type_id: postTypeId, // 1 or 2
-      title: values["_title"],
-      description: values["_description"],
-      contact_name: userData?.name || "User",
-      auth_field: "email", // or "phone" based on your flow
-      email: userData?.email,
-      phone: userData?.phone || "",
-      phone_country: "UG",
-      city_id: Number(routeCityId) || 8, // set actual city from your Location flow
-      country_code: routeCountryCode || "UG",
-      price: 0, // to be set on Setprice
-      tags: tagsArr.join(","), // 👈 CSV as API expects
-      cf, // 👈 custom fields payload
-    };
-
     navigation.navigate("Setprice", {
-      draft: {
-        baseForm,
+      baseForm: {
+        category_id: subCategoryId, // category / subcategory id
+        post_type_id: postTypeId, // 1 or 2
+        title: values["_title"],
+        description: values["_description"],
+        contact_name: userData?.name || "User",
+        auth_field: "email", // or "phone" based on your flow
+        email: userData?.email,
+        phone: userData?.phone || "",
+        phone_country: "UG",
+        city_id: Number(routeCityId) || 8, // set actual city from your Location flow
+        country_code: routeCountryCode || "UG",
+        price: 0, // to be set on Setprice
+        tags: tagsArr.join(","), // 👈 CSV as API expects
         dynamicFields: fields,
         dynamicValues: values,
-        tags: tagsArr,
+        cf, // 👈 custom fields payload}
       },
     });
   };

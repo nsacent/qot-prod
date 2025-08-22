@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+// screens/Sell/Steps/Review.js
+import React, { useEffect, useMemo, useState, useContext } from "react";
 import {
   SafeAreaView,
   View,
@@ -6,9 +7,11 @@ import {
   Image,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   Alert,
 } from "react-native";
 import { useTheme } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Header from "../../../layout/Header";
 import Button from "../../../components/Button/Button";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
@@ -23,8 +26,23 @@ const HEADERS_BASE = {
   "X-AppType": "docs",
 };
 
+const STORAGE_KEYS = {
+  selectedCity: "selectedCity",
+};
+
+// -------- helpers --------
+const unwrapBaseForm = (maybe) => {
+  let cur = maybe || {};
+  let hops = 0;
+  while (cur && cur.baseForm && hops < 5) {
+    cur = cur.baseForm;
+    hops++;
+  }
+  return cur || {};
+};
+
 const labelForPostType = (id) =>
-  id === 2 ? "Professional" : id === 1 ? "Individual" : undefined;
+  id === 2 ? "Professional" : id === 1 ? "Individual" : "—";
 
 const Chip = ({ text, colors }) => (
   <View
@@ -43,167 +61,225 @@ const Chip = ({ text, colors }) => (
   </View>
 );
 
-function appendDynamicFields(fd, dynamicValues = {}, fieldsMeta = []) {
-  const metaById =
-    Array.isArray(fieldsMeta) &&
-    fieldsMeta.reduce((acc, f) => {
-      acc[f.id] = f;
-      return acc;
-    }, {});
-
-  Object.entries(dynamicValues || {}).forEach(([fieldId, value]) => {
-    if (value === undefined || value === null || value === "") return;
-    const metaType = metaById?.[fieldId]?.type;
-    if (Array.isArray(value) || metaType === "checkbox_multiple") {
-      (Array.isArray(value) ? value : [value]).forEach((v) => {
-        if (v !== undefined && v !== null && String(v).trim() !== "") {
-          fd.append(`cf[${fieldId}][]`, String(v));
-        }
-      });
-    } else {
-      fd.append(`cf[${fieldId}]`, String(value));
-    }
-  });
-}
+const guessMimeFromName = (name = "") => {
+  const ext = name.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "heic":
+      return "image/heic";
+    case "webp":
+      return "image/webp";
+    default:
+      return "image/*";
+  }
+};
 
 const Review = ({ navigation, route }) => {
   const { colors } = useTheme();
-  const { token, userData } = React.useContext(AuthContext);
-
   const {
-    baseForm: baseFormFromRoute = {},
-    dynamicValues = {},
-    fieldsMeta = [],
-    tags: tagsFromRoute,
-    photos: photosFromRoute = [], // required now
-    primary: primaryUriFromRoute,
-  } = route?.params || {};
+    userData,
+    token: ctxToken,
+    authToken,
+    userToken,
+  } = useContext(AuthContext);
+  const token = ctxToken || authToken || userToken || userData?.token || "";
 
-  const [photos, setPhotos] = useState(
-    Array.isArray(photosFromRoute) ? photosFromRoute : []
-  );
-  const [primaryUri, setPrimaryUri] = useState(
-    primaryUriFromRoute || photosFromRoute?.[0]?.uri || null
-  );
-  const [submitting, setSubmitting] = useState(false);
+  // -------- read params (and unwrap) --------
+  const baseForm = route?.params?.baseForm || {};
+  //  const baseForm = unwrapBaseForm(params.baseForm || {});
+  // Also accept route-level fallbacks
+  const routeDynamicValues = baseForm.dynamicValues || {};
+  const routeFieldsMeta = baseForm.fieldsMeta || [];
+  const routePhotos = baseForm.photos;
+  const routePrimary = baseForm.primary;
 
+  // Prefer baseForm versions; fall back to route-level if missing
+  const fieldsMeta =
+    (Array.isArray(baseForm.dynamicFields) && baseForm.dynamicFields) ||
+    routeFieldsMeta ||
+    [];
+
+  const dynamicValues =
+    (baseForm.dynamicValues &&
+      typeof baseForm.dynamicValues === "object" &&
+      baseForm.dynamicValues) ||
+    routeDynamicValues ||
+    {};
+
+  // Photos strictly from navigation (no AsyncStorage)
+  const initialPhotos =
+    (Array.isArray(baseForm.photos) && baseForm.photos) ||
+    (Array.isArray(routePhotos) && routePhotos) ||
+    [];
+
+  const initialPrimary =
+    baseForm.primary || routePrimary || initialPhotos[0]?.uri || null;
+
+  const [photos, setPhotos] = useState(initialPhotos);
+  const [primaryUri, setPrimaryUri] = useState(initialPrimary);
+
+  // Location resolve: prefer params/baseForm; else AsyncStorage selectedCity
+  const [selectedCity, setSelectedCity] = useState(
+    baseForm.city_id && (baseForm.city_name || baseForm.city)
+      ? {
+          id: baseForm.city_id,
+          name: baseForm.city_name || baseForm.city,
+          country_code: baseForm.country_code || "UG",
+        }
+      : baseForm.city_id && (baseForm.city_name || baseForm.city_name)
+      ? {
+          id: baseForm.city_id,
+          name: baseForm.city_name || baseForm.city_name,
+          country_code: baseForm.country_code || baseForm.country_code || "UG",
+        }
+      : null
+  );
+
+  useEffect(() => {
+    (async () => {
+      if (!selectedCity) {
+        try {
+          const raw = await AsyncStorage.getItem(STORAGE_KEYS.selectedCity);
+          console.log("BASE FORMULA", route?.params?.baseForm);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.id && parsed?.name) setSelectedCity(parsed);
+          }
+        } catch {}
+      }
+    })();
+  }, [selectedCity]);
+
+  // Tags: accept CSV or array, from baseForm or route
   const tags = useMemo(() => {
-    if (Array.isArray(tagsFromRoute)) return tagsFromRoute;
-    if (typeof tagsFromRoute === "string" && tagsFromRoute.trim().length) {
-      return tagsFromRoute
+    const raw = baseForm.tags;
+    if (Array.isArray(raw)) {
+      return raw
+        .filter(Boolean)
+        .map((t) => String(t).trim())
+        .slice(0, 10);
+    }
+    if (typeof raw === "string") {
+      return raw
         .split(",")
         .map((t) => t.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .slice(0, 10);
     }
-    if (typeof baseFormFromRoute?.tags === "string") {
-      return baseFormFromRoute.tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-    }
-    if (Array.isArray(baseFormFromRoute?.tags)) return baseFormFromRoute.tags;
     return [];
-  }, [tagsFromRoute, baseFormFromRoute]);
+  }, [baseForm.tags]);
 
+  // Everything to display
   const composed = useMemo(() => {
-    const price = baseFormFromRoute?.price ?? 0;
-    const negotiable = !!baseFormFromRoute?.negotiable;
-    const postTypeId = baseFormFromRoute?.post_type_id;
+    const price = Number.isFinite(+baseForm.price) ? +baseForm.price : 0;
     return {
-      title: baseFormFromRoute?.title || "",
-      description: baseFormFromRoute?.description || "",
+      title: baseForm.title || "",
+      description: baseForm.description || "",
       price,
-      negotiable,
-      postTypeId,
-      postTypeLabel: labelForPostType(postTypeId),
-      contact_name: baseFormFromRoute?.contact_name || userData?.name || "",
-      email: baseFormFromRoute?.email || userData?.email || "",
-      cityName: baseFormFromRoute?.city_name, // if you passed it
-      countryCode: baseFormFromRoute?.country_code,
+      negotiable: !!baseForm.negotiable,
+      postTypeId: baseForm.post_type_id,
+      postTypeLabel: labelForPostType(baseForm.post_type_id),
+      contact_name: baseForm.contact_name || userData?.name || "",
+      email: baseForm.email || userData?.email || "",
+      phone: baseForm.phone || "",
+      auth_field: (baseForm.auth_field || "email").toLowerCase(),
+      cityName: selectedCity?.name,
+      countryCode: selectedCity?.country_code || baseForm.country_code || "UG",
     };
-  }, [baseFormFromRoute, userData]);
+  }, [baseForm, selectedCity, userData]);
 
-  const thumbnailSize = useMemo(() => {
-    return SIZES.width / 4 > SIZES.container
-      ? SIZES.container / 4
-      : SIZES.width / 4;
-  }, []);
+  const hasPhotos = photos.length > 0;
+  const thumb = useMemo(() => Math.min((SIZES.width - 40 - 6 * 3) / 4, 90), []);
 
+  // ---------- submit ----------
   const onSubmit = async () => {
     if (!token) {
       Alert.alert("Login required", "You must be logged in to post.");
       return;
     }
-    const bf = baseFormFromRoute || {};
-    if (!bf.category_id)
-      return Alert.alert("Missing info", "Category is required.");
-    if (!bf.post_type_id)
-      return Alert.alert("Missing info", "Post type is required.");
-    if (!bf.city_id)
-      return Alert.alert("Missing location", "Please choose a city.");
-    if (!photos?.length)
-      return Alert.alert("No photos", "Please add at least one photo.");
+    if (!baseForm.category_id) {
+      Alert.alert("Missing info", "Category is required.");
+      return;
+    }
+    if (!baseForm.post_type_id) {
+      Alert.alert("Missing info", "Post type is required.");
+      return;
+    }
+    if (!selectedCity?.id) {
+      Alert.alert("Missing location", "Please choose a city.");
+      return;
+    }
+    if (!hasPhotos) {
+      Alert.alert("No photos", "Please add at least one photo.");
+      return;
+    }
 
-    setSubmitting(true);
     try {
       const fd = new FormData();
-      const appendIf = (k, v) => {
-        if (v !== undefined && v !== null && v !== "") fd.append(k, String(v));
+      const add = (k, v) => {
+        if (v !== undefined && v !== null && String(v) !== "") {
+          fd.append(k, String(v));
+        }
       };
 
-      appendIf("category_id", bf.category_id);
-      appendIf("post_type_id", bf.post_type_id);
-      appendIf("title", bf.title);
-      appendIf("description", bf.description);
-      appendIf("contact_name", bf.contact_name || userData?.name);
-      appendIf("auth_field", bf.auth_field || "email");
-
-      if ((bf.auth_field || "email") === "email") {
-        appendIf("email", bf.email || userData?.email);
+      // Core
+      add("category_id", baseForm.category_id);
+      add("post_type_id", baseForm.post_type_id);
+      add("title", baseForm.title);
+      add("description", baseForm.description);
+      add("contact_name", baseForm.contact_name || userData?.name);
+      const authField = (baseForm.auth_field || "email").toLowerCase();
+      add("auth_field", authField);
+      if (authField === "phone") {
+        add("phone", baseForm.phone);
+        add("phone_country", baseForm.phone_country);
       } else {
-        appendIf("phone", bf.phone);
-        appendIf("phone_country", bf.phone_country);
+        add("email", baseForm.email || userData?.email);
       }
-
-      appendIf("city_id", bf.city_id);
-      appendIf("country_code", bf.country_code || "UG");
-      appendIf("price", bf.price ?? 0);
-      if (bf.negotiable !== undefined) {
-        fd.append("negotiable", bf.negotiable ? "1" : "0");
-      }
+      add("city_id", selectedCity.id);
+      add("country_code", composed.countryCode);
+      add("price", baseForm.price ?? 0);
+      add("negotiable", baseForm.negotiable ? 1 : 0);
       fd.append("accept_terms", "1");
 
-      if (bf?.phone_hidden != null)
-        fd.append("phone_hidden", bf.phone_hidden ? "1" : "0");
-      if (bf?.is_permanent != null)
-        fd.append("is_permanent", bf.is_permanent ? "1" : "0");
+      // Tags
+      if (tags.length) add("tags", tags.join(","));
 
-      if (Array.isArray(tags) && tags.length) {
-        fd.append("tags", tags.join(","));
+      // Package/payment if present
+      if (baseForm.package_id != null) add("package_id", baseForm.package_id);
+      if (baseForm.payment_method_id != null)
+        add("payment_method_id", baseForm.payment_method_id);
+
+      // Custom fields:
+      // Prefer fully-built cf from baseForm if present,
+      // else build from dynamicValues (labels shown below).
+      if (baseForm.cf && typeof baseForm.cf === "object") {
+        Object.entries(baseForm.cf).forEach(([k, v]) => {
+          if (Array.isArray(v)) {
+            v.forEach((x) => add(`cf[${k}][]`, x));
+          } else {
+            add(`cf[${k}]`, v);
+          }
+        });
+      } else if (dynamicValues && typeof dynamicValues === "object") {
+        Object.entries(dynamicValues).forEach(([fieldId, v]) => {
+          if (Array.isArray(v)) {
+            v.forEach((x) => add(`cf[${fieldId}][]`, x));
+          } else {
+            add(`cf[${fieldId}]`, v);
+          }
+        });
       }
 
-      if (bf?.package_id) fd.append("package_id", String(bf.package_id));
-      if (bf?.payment_method_id)
-        fd.append("payment_method_id", String(bf.payment_method_id));
-
-      // dynamic fields
-      appendDynamicFields(fd, dynamicValues, fieldsMeta);
-
-      // ensure primary first
-      const ordered = primaryUri
-        ? [
-            ...photos.filter((p) => p.uri === primaryUri),
-            ...photos.filter((p) => p.uri !== primaryUri),
-          ]
-        : photos;
-
-      ordered.forEach((p) => {
-        const file = {
-          uri: p.uri,
-          name: p.name || "photo.jpg",
-          type: p.type || "image/jpeg",
-        };
-        fd.append("pictures[]", file);
+      // Pictures
+      photos.forEach((p, idx) => {
+        const name = p.name || `photo_${idx + 1}.jpg`;
+        const type = p.type || guessMimeFromName(name);
+        fd.append("pictures[]", { uri: p.uri, name, type });
       });
 
       const res = await fetch(`${API_BASE_URL}/posts`, {
@@ -211,11 +287,13 @@ const Review = ({ navigation, route }) => {
         headers: {
           ...HEADERS_BASE,
           Authorization: `Bearer ${token}`,
+          // ⚠️ Don't set Content-Type for RN FormData
         },
         body: fd,
       });
 
       const json = await res.json().catch(() => ({}));
+
       if (!res.ok || json?.success === false) {
         const lines = [];
         if (json?.message) lines.push(json.message);
@@ -239,13 +317,12 @@ const Review = ({ navigation, route }) => {
         },
       ]);
     } catch (err) {
-      console.log("POST failed:", err);
+      console.log("Create listing failed:", err);
       Alert.alert("Create listing failed", String(err?.message || err));
-    } finally {
-      setSubmitting(false);
     }
   };
 
+  // --------- UI ---------
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
       <Header title="Review your details" leftIcon={"back"} titleLeft />
@@ -280,7 +357,7 @@ const Review = ({ navigation, route }) => {
           </View>
 
           {/* Tags */}
-          {!!tags?.length && (
+          {!!tags.length && (
             <View
               style={{ marginTop: 12, flexDirection: "row", flexWrap: "wrap" }}
             >
@@ -292,16 +369,27 @@ const Review = ({ navigation, route }) => {
 
           {/* Post type / Location */}
           <View style={{ marginTop: 14 }}>
-            {!!composed.postTypeLabel && (
-              <Text style={[FONTS.font, { color: colors.text }]}>
-                Post type: {composed.postTypeLabel}
-              </Text>
-            )}
-            {!!baseFormFromRoute?.city_name && (
-              <Text style={[FONTS.font, { color: colors.text, marginTop: 2 }]}>
-                Location: {baseFormFromRoute.city_name}
-              </Text>
-            )}
+            <Text style={[FONTS.font, { color: colors.text }]}>
+              Post type: {composed.postTypeLabel}
+            </Text>
+            <Text style={[FONTS.font, { color: colors.text, marginTop: 2 }]}>
+              Location:{" "}
+              {selectedCity?.name
+                ? `${selectedCity.name} · ${composed.countryCode}`
+                : "—"}
+            </Text>
+          </View>
+
+          {/* Contact */}
+          <View style={{ marginTop: 14 }}>
+            <Text style={[FONTS.font, { color: colors.text }]}>
+              Contact: {composed.contact_name || "—"}
+            </Text>
+            <Text style={[FONTS.font, { color: colors.text, marginTop: 2 }]}>
+              {composed.auth_field === "phone"
+                ? composed.phone || "—"
+                : composed.email || "—"}
+            </Text>
           </View>
 
           {/* Description */}
@@ -319,24 +407,32 @@ const Review = ({ navigation, route }) => {
             </View>
           ) : null}
 
-          {/* Dynamic Fields */}
-          {Array.isArray(fieldsMeta) && fieldsMeta.length > 0 ? (
-            <View style={{ marginTop: 20 }}>
-              <Text
-                style={[
-                  FONTS.fontMedium,
-                  { color: colors.title, marginBottom: 8 },
-                ]}
-              >
-                Item details
-              </Text>
-              {fieldsMeta.map((f) => {
-                const val = dynamicValues?.[f.id];
-                if (val == null || (Array.isArray(val) && val.length === 0))
+          {/* Dynamic fields */}
+          <View style={{ marginTop: 20 }}>
+            <Text
+              style={[
+                FONTS.fontMedium,
+                { color: colors.title, marginBottom: 8 },
+              ]}
+            >
+              Item details
+            </Text>
+
+            {/* Prefer labeled output when fieldsMeta is present */}
+            {Array.isArray(fieldsMeta) && fieldsMeta.length > 0 ? (
+              fieldsMeta.map((f) => {
+                const raw =
+                  dynamicValues?.[f.id] ??
+                  dynamicValues?.[String(f.id)] ??
+                  (baseForm.cf ? baseForm.cf[f.id] : undefined);
+                if (
+                  raw == null ||
+                  (Array.isArray(raw) && raw.filter(Boolean).length === 0)
+                )
                   return null;
-                const valueLabel = Array.isArray(val)
-                  ? val.join(", ")
-                  : String(val);
+                const display = Array.isArray(raw)
+                  ? raw.join(", ")
+                  : String(raw);
                 return (
                   <View
                     key={String(f.id)}
@@ -350,15 +446,56 @@ const Review = ({ navigation, route }) => {
                       <Text style={{ fontWeight: "600" }}>
                         {f.name || f.id}:
                       </Text>{" "}
-                      <Text style={{ color: colors.text }}>{valueLabel}</Text>
+                      <Text style={{ color: colors.text }}>{display}</Text>
                     </Text>
                   </View>
                 );
-              })}
-            </View>
-          ) : null}
+              })
+            ) : // If no meta, fall back to raw cf/dynamicValues keys
+            baseForm.cf && Object.keys(baseForm.cf).length ? (
+              Object.entries(baseForm.cf).map(([k, v]) => {
+                const display = Array.isArray(v) ? v.join(", ") : String(v);
+                return (
+                  <View
+                    key={String(k)}
+                    style={{
+                      paddingVertical: 8,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ color: colors.title }}>
+                      <Text style={{ fontWeight: "600" }}>Field {k}:</Text>{" "}
+                      <Text style={{ color: colors.text }}>{display}</Text>
+                    </Text>
+                  </View>
+                );
+              })
+            ) : Object.keys(dynamicValues).length ? (
+              Object.entries(dynamicValues).map(([k, v]) => {
+                const display = Array.isArray(v) ? v.join(", ") : String(v);
+                return (
+                  <View
+                    key={String(k)}
+                    style={{
+                      paddingVertical: 8,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                    }}
+                  >
+                    <Text style={{ color: colors.title }}>
+                      <Text style={{ fontWeight: "600" }}>Field {k}:</Text>{" "}
+                      <Text style={{ color: colors.text }}>{display}</Text>
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <Text style={{ color: colors.text }}>—</Text>
+            )}
+          </View>
 
-          {/* Images */}
+          {/* Photos */}
           <View style={{ marginTop: 20 }}>
             <Text
               style={[
@@ -369,7 +506,7 @@ const Review = ({ navigation, route }) => {
               Photos ({photos.length})
             </Text>
 
-            {photos.length ? (
+            {hasPhotos ? (
               <>
                 {/* Primary preview */}
                 <View
@@ -419,18 +556,16 @@ const Review = ({ navigation, route }) => {
                 </View>
 
                 {/* Thumbnails */}
-                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                  {photos.map((p) => {
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}
+                >
+                  {photos.map((p, i) => {
                     const isPrimary = p.uri === primaryUri;
                     return (
                       <TouchableOpacity
-                        key={p.id}
+                        key={p.id || p.uri || String(i)}
                         onPress={() => setPrimaryUri(p.uri)}
-                        style={{
-                          width: "25%",
-                          height: thumbnailSize,
-                          padding: 2,
-                        }}
+                        style={{ width: "24%", height: thumb }}
                       >
                         <View
                           style={{
@@ -439,6 +574,8 @@ const Review = ({ navigation, route }) => {
                             borderColor: isPrimary
                               ? COLORS.primary
                               : "transparent",
+                            borderRadius: 6,
+                            overflow: "hidden",
                           }}
                         >
                           <Image
@@ -469,12 +606,7 @@ const Review = ({ navigation, route }) => {
           { paddingBottom: 20, paddingHorizontal: 20 },
         ]}
       >
-        <Button
-          title={submitting ? "Posting…" : "Post Now"}
-          onPress={onSubmit}
-          disabled={submitting}
-          loading={submitting}
-        />
+        <Button title="Post Now" onPress={onSubmit} />
       </View>
     </SafeAreaView>
   );

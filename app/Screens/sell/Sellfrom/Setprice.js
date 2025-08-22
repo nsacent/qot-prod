@@ -49,15 +49,15 @@ const Setprice = ({ navigation, route }) => {
   const onNext = () => {
     if (!validate()) return;
 
-    const payload = {
-      ...baseForm,
-      // integer UGX for API
-      price: priceInt,
-      // many Laravel APIs accept 1/0 in form-data for booleans
-      negotiable: negotiable ? 1 : 0,
-    };
-
-    navigation.navigate(nextScreen, { draft: payload });
+    navigation.navigate(nextScreen, {
+      baseForm: {
+        ...baseForm,
+        // integer UGX for API
+        price: priceInt,
+        // many Laravel APIs accept 1/0 in form-data for booleans
+        negotiable: negotiable ? 1 : 0,
+      },
+    });
   };
 
   // tap anywhere to dismiss keyboard

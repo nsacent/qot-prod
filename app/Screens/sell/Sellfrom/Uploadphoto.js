@@ -31,14 +31,7 @@ const Uploadphoto = ({ navigation, route }) => {
   const { colors } = useTheme();
 
   // carry all previously collected data forward
-  const {
-    draft: {
-      baseForm = {}, // includes: category_id, post_type_id, title, description, price, negotiable, city_id, country_code, etc
-      dynamicValues = {}, // cf values object from Form screen
-      fieldsMeta = [], // optional meta for pretty labels in Review
-      tags, // array<string> or comma string
-    },
-  } = route?.params || {};
+  const baseForm = route?.params?.baseForm;
 
   const [images, setImages] = useState([]); // [{id, uri, name?, type?, assetKey}]
   const [activeImage, setActiveImage] = useState("");
@@ -222,14 +215,11 @@ const Uploadphoto = ({ navigation, route }) => {
       return;
     }
     navigation.navigate("Review", {
-      draft: {
-        baseForm,
-        dynamicValues,
-        fieldsMeta,
-        tags,
+      baseForm: {
+        ...baseForm,
         photos: images,
+        primary: activeImage || images[0].uri,
       },
-      primary: activeImage || images[0].uri,
     });
   };
 

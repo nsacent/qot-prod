@@ -133,11 +133,8 @@ const Location = ({ navigation, route }) => {
   const { colors } = useTheme();
 
   // Expecting { baseForm?, country_code? } from Setprice
-  const incomingBase = route?.params?.draft || {};
-  const countryCode =
-    route?.params?.country_code ||
-    incomingBase?.country_code ||
-    COUNTRY_CODE_DEFAULT;
+  const baseForm = route?.params?.baseForm || {};
+  const countryCode = COUNTRY_CODE_DEFAULT;
 
   const [loading, setLoading] = useState(true);
   const [cities, setCities] = useState([]); // [{id,name}]
@@ -199,15 +196,16 @@ const Location = ({ navigation, route }) => {
     }
 
     // Merge city into baseForm and move to Review
-    const payload = {
-      ...incomingBase,
-      city_id: selectedCity.id,
-      country_code: countryCode,
-      // optional for display in next screen
-      city_name: selectedCity.name,
-    };
 
-    navigation.navigate("Uploadphoto", { draft: payload });
+    navigation.navigate("Uploadphoto", {
+      baseForm: {
+        ...baseForm,
+        city_id: selectedCity.id,
+        country_code: countryCode,
+        // optional for display in next screen
+        city_name: selectedCity.name,
+      },
+    });
   };
 
   return (
