@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useContext, useRef } from "react";
+import React, { useMemo, useState, useContext, useRef, useEffect } from "react";
 import {
   SafeAreaView,
   View,
@@ -18,6 +18,9 @@ import { COLORS, FONTS, IMAGES, SIZES } from "../../../constants/theme";
 import { useListingDraft } from "../../../context/ListingDraftContext";
 import { AuthContext } from "../../../context/AuthProvider";
 
+// 👇 helper to clear AsyncStorage cache set in Uploadphoto
+import { clearPendingPhotosCache } from "./Uploadphoto";
+
 const API_BASE_URL = "https://qot.ug/api";
 const HEADERS_BASE = {
   Accept: "application/json",
@@ -32,16 +35,8 @@ const labelForPostType = (id) =>
 const Chip = ({ text, colors, variant = "default", style }) => {
   const styles =
     variant === "solid"
-      ? {
-          bg: COLORS.primary,
-          border: COLORS.primary,
-          text: "#fff",
-        }
-      : {
-          bg: colors.card,
-          border: colors.border,
-          text: colors.title,
-        };
+      ? { bg: COLORS.primary, border: COLORS.primary, text: "#fff" }
+      : { bg: colors.card, border: colors.border, text: colors.title };
 
   return (
     <View
@@ -69,7 +64,6 @@ function appendDynamicFields(fd, dynamicValues = {}, fieldsMeta = []) {
   const metaById =
     Array.isArray(fieldsMeta) &&
     fieldsMeta.reduce((acc, f) => ((acc[f.id] = f), acc), {});
-
   Object.entries(dynamicValues).forEach(([fieldId, value]) => {
     if (value === undefined || value === null || value === "") return;
     const metaType = metaById?.[fieldId]?.type;
@@ -88,7 +82,7 @@ function appendDynamicFields(fd, dynamicValues = {}, fieldsMeta = []) {
 const Review = ({ navigation }) => {
   const { colors } = useTheme();
   const { token, userData } = useContext(AuthContext);
-  const { draft, patchBase, setPrimary, removePhoto } = useListingDraft();
+  const { draft, patchBase } = useListingDraft();
 
   const base = draft.baseForm || {};
   const fieldsMeta = draft.fieldsMeta || [];
@@ -100,9 +94,7 @@ const Review = ({ navigation }) => {
   const postTypeLabel = labelForPostType(base.post_type_id);
   const displayCity = draft.city_name
     ? draft.city_name
-    : base.city_id
-    ? `City #${base.city_id}`
-    : undefined;
+    : base.city_name || undefined;
 
   const tagsArr = useMemo(() => {
     if (Array.isArray(base.tags)) return base.tags;
@@ -125,7 +117,7 @@ const Review = ({ navigation }) => {
 
   // ----- Hero carousel (swipe to set primary) -----
   const screenW = Dimensions.get("window").width;
-  const primaryUri = base.primary || photos?.[0]?.uri || null;
+  const primaryUri = base.primary || (photos[0] && photos[0].uri) || null;
 
   const startIndex = useMemo(() => {
     const idx = photos.findIndex((p) => p.uri === primaryUri);
@@ -135,12 +127,31 @@ const Review = ({ navigation }) => {
   const heroRef = useRef(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
 
+  // Keep hero aligned with current primary
+  useEffect(() => {
+    if (!heroRef.current) return;
+    const idx = photos.findIndex((p) => p.uri === primaryUri);
+    if (idx >= 0) {
+      heroRef.current.scrollTo({ x: idx * screenW, y: 0, animated: true });
+    }
+  }, [primaryUri, photos, screenW]);
+
+  const updatePrimary = (uri) => {
+    if (!uri || uri === primaryUri) return;
+    patchBase({ primary: uri });
+  };
+
+  const removePhotoByKey = (key) => {
+    const next = photos.filter((p) => (p.id || p.uri) !== key);
+    const nextPrimary =
+      primaryUri && primaryUri === key ? next[0]?.uri ?? null : primaryUri;
+    patchBase({ photos: next, primary: nextPrimary || undefined });
+  };
+
   const onHeroScrollEnd = (e) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / screenW);
     const target = photos[idx]?.uri;
-    if (target && target !== primaryUri) {
-      setPrimary(target);
-    }
+    if (target) updatePrimary(target);
   };
 
   const openGallery = () => setGalleryOpen(true);
@@ -193,8 +204,10 @@ const Review = ({ navigation }) => {
 
       if (tagsArr.length) fd.append("tags", tagsArr.join(","));
 
-      appendDynamicFields(fd, dynamicValues, fieldsMeta);
+      // Dynamic fields
+      appendDynamicFields(fd, draft.dynamicValues, draft.fieldsMeta);
 
+      // Photos
       photos.forEach((p) => {
         fd.append("pictures[]", {
           uri: p.uri,
@@ -221,6 +234,9 @@ const Review = ({ navigation }) => {
         }
         throw new Error(lines.join("\n") || "Failed to post");
       }
+
+      // ✅ clear the persisted pending photos cache on success
+      await clearPendingPhotosCache();
 
       Alert.alert("Success", "Your listing has been posted.", [
         {
@@ -386,8 +402,8 @@ const Review = ({ navigation }) => {
                 >
                   <Image
                     source={
-                      userData?.photoURL
-                        ? { uri: userData.photoURL }
+                      userData?.photo_url
+                        ? { uri: userData.photo_url }
                         : IMAGES.Small5
                     }
                     style={{ width: "100%", height: "100%" }}
@@ -485,7 +501,7 @@ const Review = ({ navigation }) => {
                       return (
                         <TouchableOpacity
                           key={p.id ?? `${p.uri}-${idx}`}
-                          onPress={() => setPrimary(p.uri)}
+                          onPress={() => updatePrimary(p.uri)}
                           onLongPress={() =>
                             Alert.alert(
                               "Remove photo",
@@ -495,7 +511,8 @@ const Review = ({ navigation }) => {
                                 {
                                   text: "Remove",
                                   style: "destructive",
-                                  onPress: () => removePhoto(p.id || p.uri),
+                                  onPress: () =>
+                                    removePhotoByKey(p.id || p.uri),
                                 },
                               ]
                             )

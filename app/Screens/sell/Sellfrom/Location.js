@@ -210,6 +210,7 @@ const Location = ({ navigation, route }) => {
     // write to context (no effect loops here)
     patchBase({
       city_id: selectedCity.id,
+      city_name: selectedCity.name,
       country_code:
         selectedCity.country_code || countryCode || COUNTRY_CODE_DEFAULT,
     });

@@ -238,6 +238,13 @@ const Form = ({ navigation, route }) => {
     draft.baseForm.post_type_id || null
   );
 
+  // ✅ Contact info state (new)
+  const [contactName, setContactName] = useState(
+    draft.baseForm.contact_name || userData?.name || ""
+  );
+  const emailVal = draft.baseForm.email || userData?.email || "";
+  const phoneVal = draft.baseForm.phone || userData?.phone || "";
+
   // Tags state (prefill from draft CSV)
   const initialTags = useMemo(() => {
     const t = draft.baseForm.tags;
@@ -428,6 +435,7 @@ const Form = ({ navigation, route }) => {
     if (!title.trim()) next._title = "Ad title is required";
     if (!description.trim()) next._description = "Description is required";
     if (!postTypeId) next._post_type_id = "Post type is required";
+    if (!contactName.trim()) next._contact_name = "Contact name is required"; // ✅ NEW
 
     // date range consistency
     try {
@@ -473,10 +481,10 @@ const Form = ({ navigation, route }) => {
       post_type_id: postTypeId,
       title: title.trim(),
       description: description.trim(),
-      contact_name: draft.baseForm.contact_name || userData?.name || "User",
+      contact_name: contactName.trim() || "User", // ✅ use edited name
       auth_field: draft.baseForm.auth_field || "email",
-      email: draft.baseForm.email || userData?.email || "",
-      phone: draft.baseForm.phone || userData?.phone || "",
+      email: emailVal, // read-only if present
+      phone: phoneVal, // read-only if present
       phone_country: draft.baseForm.phone_country || "UG",
       country_code: draft.baseForm.country_code || "UG",
       // price handled on Setprice
@@ -917,6 +925,102 @@ const Form = ({ navigation, route }) => {
                   Enter tags separated by commas or press Enter. 2–20 chars, up
                   to 10 tags.
                 </Text>
+              </View>
+
+              {/* ✅ Contact information (new) */}
+              <View
+                style={{ marginTop: 16, marginBottom: 10 }}
+                onLayout={(e) =>
+                  (fieldY.current["_contact_name"] = e.nativeEvent.layout.y)
+                } // ✅ NEW
+              >
+                <Text
+                  style={[FONTS.font, { color: colors.title, marginBottom: 8 }]}
+                >
+                  Contact information
+                </Text>
+
+                {/* Contact name (editable) */}
+                <Text style={[FONTS.font, { color: colors.text }]}>
+                  Contact name *
+                </Text>
+                <TextInput
+                  value={contactName}
+                  onChangeText={(t) => {
+                    setContactName(t);
+                    setErrors((p) => ({ ...p, _contact_name: undefined })); // ✅ NEW
+                  }}
+                  placeholder="Your name *"
+                  placeholderTextColor={colors.text}
+                  style={[
+                    GlobalStyleSheet.shadow2,
+                    {
+                      borderColor: colors.border,
+                      padding: 10,
+                      backgroundColor: colors.card,
+                      height: 48,
+                      marginTop: 6,
+                      marginBottom: 12,
+                    },
+                  ]}
+                />
+
+                {!!errors["_contact_name"] && ( // ✅ NEW
+                  <Text style={{ color: "crimson", marginBottom: 12 }}>
+                    {errors["_contact_name"]}
+                  </Text>
+                )}
+
+                {/* Email (read-only if present) */}
+                {emailVal ? (
+                  <>
+                    <Text style={[FONTS.font, { color: colors.text }]}>
+                      Email
+                    </Text>
+                    <TextInput
+                      value={emailVal}
+                      editable={false}
+                      selectTextOnFocus={false}
+                      style={[
+                        GlobalStyleSheet.shadow2,
+                        {
+                          borderColor: colors.border,
+                          padding: 10,
+                          backgroundColor: colors.card,
+                          height: 48,
+                          opacity: 0.7,
+                          marginTop: 6,
+                          marginBottom: 12,
+                        },
+                      ]}
+                    />
+                  </>
+                ) : null}
+
+                {/* Phone (read-only if present) */}
+                {phoneVal ? (
+                  <>
+                    <Text style={[FONTS.font, { color: colors.text }]}>
+                      Phone
+                    </Text>
+                    <TextInput
+                      value={phoneVal}
+                      editable={false}
+                      selectTextOnFocus={false}
+                      style={[
+                        GlobalStyleSheet.shadow2,
+                        {
+                          borderColor: colors.border,
+                          padding: 10,
+                          backgroundColor: colors.card,
+                          height: 48,
+                          opacity: 0.7,
+                          marginTop: 6,
+                        },
+                      ]}
+                    />
+                  </>
+                ) : null}
               </View>
 
               <Text style={[FONTS.font, { color: colors.text, marginTop: 6 }]}>

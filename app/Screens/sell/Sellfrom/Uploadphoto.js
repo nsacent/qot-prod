@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,16 +16,31 @@ import Button from "../../../components/Button/Button";
 
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // 👉 pull in patchBase from your draft context
 import { useListingDraft } from "../../../context/ListingDraftContext";
 
 const MAX_PHOTOS = 8;
 
+const STORAGE_KEYS = {
+  pendingPhotos: "pendingPhotos",
+  pendingPrimary: "pendingPrimary",
+};
+
+export async function clearPendingPhotosCache() {
+  try {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.pendingPhotos,
+      STORAGE_KEYS.pendingPrimary,
+    ]);
+  } catch {}
+}
+
 const getPickerMediaTypes = () => {
   // Prefer the new API (array of MediaType)
   if (ImagePicker?.MediaType?.Images) return [ImagePicker.MediaType.Images];
-  // Fallback for older SDKs
+  // Fallback for older SDKs (will show a deprecation warning in newer Expo)
   return ImagePicker.MediaTypeOptions?.Images;
 };
 
@@ -47,6 +62,49 @@ const Uploadphoto = ({ navigation }) => {
         : SIZES.width - Math.min(SIZES.width * 0.2, SIZES.container * 0.2);
     return base;
   }, []);
+
+  // --------- AsyncStorage restore on mount ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        const [rawPhotos, rawPrimary] = await Promise.all([
+          AsyncStorage.getItem(STORAGE_KEYS.pendingPhotos),
+          AsyncStorage.getItem(STORAGE_KEYS.pendingPrimary),
+        ]);
+        if (rawPhotos) {
+          const saved = JSON.parse(rawPhotos);
+          if (Array.isArray(saved) && saved.length) {
+            setImages(saved);
+            const prim = rawPrimary ? JSON.parse(rawPrimary) : null;
+            setActiveImage(prim || saved[0]?.uri || "");
+          }
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // --------- Persist to AsyncStorage whenever images or primary change ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.pendingPhotos,
+          JSON.stringify(images || [])
+        );
+      } catch {}
+    })();
+  }, [images]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.pendingPrimary,
+          JSON.stringify(activeImage || "")
+        );
+      } catch {}
+    })();
+  }, [activeImage]);
 
   const requestMediaLibraryPermission = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -193,17 +251,50 @@ const Uploadphoto = ({ navigation }) => {
     ]);
   };
 
-  const goNext = () => {
+  // 🔥 NEW: Clear all photos (wipes state + AsyncStorage cache)
+  const clearAllPhotos = () => {
+    if (!images.length) return;
+    Alert.alert(
+      "Clear all photos",
+      "This will remove all selected photos. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setImages([]);
+            setActiveImage("");
+            try {
+              await clearPendingPhotosCache();
+            } catch {}
+          },
+        },
+      ]
+    );
+  };
+
+  const goNext = async () => {
     if (!images.length) {
       Alert.alert("No photos", "Please add at least one photo to continue.");
       return;
     }
 
+    const primary = activeImage || images[0].uri;
+
     // ✅ store into the draft using patchBase
     patchBase({
       photos: images,
-      primary: activeImage || images[0].uri,
+      primary,
     });
+
+    // ✅ also ensure cache is up to date before navigating
+    try {
+      await AsyncStorage.multiSet([
+        [STORAGE_KEYS.pendingPhotos, JSON.stringify(images)],
+        [STORAGE_KEYS.pendingPrimary, JSON.stringify(primary)],
+      ]);
+    } catch {}
 
     // then move on
     navigation.navigate("Review");
@@ -212,7 +303,6 @@ const Uploadphoto = ({ navigation }) => {
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
       <Header title="Upload your photos" leftIcon={"back"} titleLeft />
-
       {/* Preview */}
       <View>
         <View
@@ -246,7 +336,6 @@ const Uploadphoto = ({ navigation }) => {
           )}
         </View>
       </View>
-
       {/* Toolbar */}
       <View
         style={{
@@ -273,8 +362,12 @@ const Uploadphoto = ({ navigation }) => {
             source={IMAGES.camera}
           />
         </TouchableOpacity>
-      </View>
 
+        {/* 🔥 NEW: Clear all button */}
+        <TouchableOpacity onPress={clearAllPhotos} style={{ padding: 10 }}>
+          <Text style={{ color: "crimson" }}>Clear</Text>
+        </TouchableOpacity>
+      </View>
       {/* Thumbnails */}
       <ScrollView showsVerticalScrollIndicator={false} scrollEventThrottle={16}>
         <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
@@ -315,7 +408,6 @@ const Uploadphoto = ({ navigation }) => {
           })}
         </View>
       </ScrollView>
-
       {/* Footer */}
       <View
         style={[
