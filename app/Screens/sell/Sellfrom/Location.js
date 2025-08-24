@@ -16,6 +16,7 @@ import {
   FlatList,
   Modal,
   Alert,
+  Dimensions,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme } from "@react-navigation/native";
@@ -24,6 +25,7 @@ import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import Button from "../../../components/Button/Button";
 import { useListingDraft } from "../../../context/ListingDraftContext";
+import useKeyboardInset from "../../../../src/utils/useKeyboardInset";
 
 const API_BASE_URL = "https://qot.ug/api";
 const CITIES_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -142,6 +144,13 @@ const Location = ({ navigation, route }) => {
 
   // hydrate only once to avoid loops
   const didHydrateRef = useRef(false);
+
+  const kbInset = useKeyboardInset();
+  const windowH = Dimensions.get("window").height;
+  const sheetMaxHeight = Math.min(
+    Math.floor(windowH * 0.75),
+    Math.floor(windowH - kbInset - 24) // leave a little headroom
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -321,18 +330,26 @@ const Location = ({ navigation, route }) => {
         <Button onPress={onContinue} title={"Continue"} />
       </View>
 
-      <Modal visible={pickerVisible} animationType="slide" transparent>
+      <Modal
+        visible={pickerVisible}
+        animationType="slide"
+        transparent
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setPickerVisible(false)}
+      >
         <View
           style={{
             flex: 1,
             backgroundColor: "rgba(0,0,0,0.2)",
             justifyContent: "flex-end",
+            paddingBottom: kbInset, // ⬅️ pushes sheet above the keyboard on iOS & Android
           }}
         >
           <View
             style={{
               backgroundColor: colors.card,
-              maxHeight: "75%",
+              maxHeight: sheetMaxHeight,
               borderTopLeftRadius: 16,
               borderTopRightRadius: 16,
               paddingHorizontal: 16,
@@ -350,6 +367,7 @@ const Location = ({ navigation, route }) => {
                 marginBottom: 12,
               }}
             />
+
             <Text
               style={{
                 ...FONTS.fontMedium,
@@ -389,6 +407,7 @@ const Location = ({ navigation, route }) => {
                 data={filtered}
                 keyExtractor={(item) => String(item.id)}
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     onPress={() => pickCity(item)}
