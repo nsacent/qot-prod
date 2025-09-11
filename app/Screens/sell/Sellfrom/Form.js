@@ -19,8 +19,8 @@ import {
   Keyboard,
   Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage"; // ✅ NEW
-import { useTheme } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useTheme, useFocusEffect } from "@react-navigation/native";
 import Header from "../../../layout/Header";
 import { GlobalStyleSheet } from "../../../constants/StyleSheet";
 import { COLORS, FONTS } from "../../../constants/theme";
@@ -29,8 +29,6 @@ import InlinePicker from "../../Components/InlinePicker";
 import DateInput from "../../Components/DateInput";
 import dayjs from "dayjs";
 import { AuthContext } from "../../../context/AuthProvider";
-
-// 👉 our draft context (wrap your app with ListingDraftProvider)
 import { useListingDraft } from "../../../context/ListingDraftContext";
 
 const API_BASE_URL = "https://qot.ug/api";
@@ -53,7 +51,11 @@ const STORAGE = {
 const toTitleCase = (s = "") =>
   s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-const toDate = (s) => (s ? dayjs(s, "YYYY-MM-DD").toDate() : undefined);
+const isYmd = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+const toDate = (s) =>
+  isYmd(s) && dayjs(s, "YYYY-MM-DD", true).isValid()
+    ? dayjs(s, "YYYY-MM-DD").toDate()
+    : undefined;
 
 // small storage helpers
 const loadCache = async (key, ttlMs) => {
@@ -143,13 +145,14 @@ const OlxRadioGroup = ({ value, options = [], onChange, colors }) => (
     }}
   >
     {options.map((opt, i) => {
-      const selected = value === opt.value;
+      const label = opt.value ?? opt.name ?? String(opt.id);
+      const selected = value === (opt.value ?? opt.name ?? "");
       return (
         <View key={String(opt.id)}>
           <OlxRadioRow
-            label={opt.value}
+            label={label}
             selected={selected}
-            onPress={() => onChange(opt.value)}
+            onPress={() => onChange(opt.value ?? opt.name ?? "")}
             colors={colors}
           />
           {i < options.length - 1 ? (
@@ -243,8 +246,14 @@ const Form = ({ navigation, route }) => {
   const { draft, patchBase, setFieldsMeta, setDynamicValues, setTags } =
     useListingDraft();
 
-  // From previous screen (eg. Selllist) we expect:
-  const { subCategoryId, subCategorySlug } = route.params || {};
+  // Resolve params vs draft (important when returning from Review)
+  const { subCategoryId: pCatId, subCategorySlug: pSlug } = route.params || {};
+  const resolvedCatId = pCatId ?? draft?.baseForm?.category_id ?? null;
+  const resolvedSlug =
+    pSlug ??
+    draft?.subCategorySlug ??
+    draft?.baseForm?.category_name ??
+    "Include some details";
 
   const [loading, setLoading] = useState(true);
   const [fields, setFields] = useState([]); // API dynamic fields
@@ -316,21 +325,49 @@ const Form = ({ navigation, route }) => {
     });
   };
 
-  // ---------- Fetch/restore dynamic fields with 2-day cache (handles also empty sets) ----------
+  const rememberY = useCallback(
+    (id) => (e) => {
+      fieldY.current[id] = e.nativeEvent.layout.y;
+    },
+    []
+  );
 
+  // ---------- Fetch/restore dynamic fields with 2-day cache ----------
   const fetchFields = useCallback(async () => {
-    if (!subCategoryId) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
+      // If we don't have a resolved category, fall back to what's in the draft (so the form still shows)
+      if (!resolvedCatId) {
+        if (Array.isArray(draft.fieldsMeta)) {
+          const list = draft.fieldsMeta;
+          setFields(list);
+
+          const init = {};
+          list.forEach((f) => {
+            const id = f.id;
+            const dv = draft.dynamicValues?.[id];
+            if (dv !== undefined) {
+              init[id] = dv;
+              return;
+            }
+            if (f.type === "checkbox_multiple") init[id] = [];
+            else if (f.type === "number")
+              init[id] = f.default_value ? String(f.default_value) : "";
+            else if (f.type === "select" || f.type === "radio")
+              init[id] = f.default_value || "";
+            else init[id] = f.default_value || "";
+          });
+          setValues(init);
+        }
+        setLoading(false);
+        return;
+      }
+
       const [cachedFields, cachedValues] = await Promise.all([
-        loadCache(STORAGE.fields(subCategoryId), FIELD_CACHE_TTL_MS),
-        loadCache(STORAGE.values(subCategoryId), FIELD_CACHE_TTL_MS),
+        loadCache(STORAGE.fields(resolvedCatId), FIELD_CACHE_TTL_MS),
+        loadCache(STORAGE.values(resolvedCatId), FIELD_CACHE_TTL_MS),
       ]);
 
-      // ✅ Use cache even if it's an empty array
       if (cachedFields !== null) {
         const list = Array.isArray(cachedFields) ? cachedFields : [];
         setFields(list);
@@ -356,21 +393,20 @@ const Form = ({ navigation, route }) => {
           init[id] = v;
         });
 
-        // If there are no fields, init will be {}; that’s fine.
         setValues(init);
         setLoading(false);
         return;
       }
 
       // No valid cache -> fetch
-      const url = `${API_BASE_URL}/categories/${subCategoryId}/fields`;
+      const url = `${API_BASE_URL}/categories/${resolvedCatId}/fields`;
       const res = await fetch(url, { headers: HEADERS });
       const json = await res.json();
 
       const list = Array.isArray(json?.result) ? json.result : [];
       setFields(list);
-      // ✅ Cache the array even if it's empty
-      saveCache(STORAGE.fields(subCategoryId), list);
+      // Cache the array even if it's empty
+      saveCache(STORAGE.fields(resolvedCatId), list);
 
       const init = {};
       list.forEach((f) => {
@@ -393,17 +429,20 @@ const Form = ({ navigation, route }) => {
     } finally {
       setLoading(false);
     }
-  }, [subCategoryId, draft.dynamicValues]);
+  }, [resolvedCatId, draft.fieldsMeta, draft.dynamicValues]);
 
-  useEffect(() => {
-    fetchFields();
-  }, [fetchFields]);
+  // Refetch whenever screen gains focus (returning from Review)
+  useFocusEffect(
+    useCallback(() => {
+      fetchFields();
+    }, [fetchFields])
+  );
 
   // ✅ Persist current VALUES to cache (2 days) whenever they change
   useEffect(() => {
-    if (!subCategoryId) return;
-    saveCache(STORAGE.values(subCategoryId), values);
-  }, [values, subCategoryId]);
+    if (!resolvedCatId) return;
+    saveCache(STORAGE.values(resolvedCatId), values);
+  }, [values, resolvedCatId]);
 
   const dynamicRequired = useMemo(
     () => fields.filter((f) => Number(f.required) === 1),
@@ -484,12 +523,13 @@ const Form = ({ navigation, route }) => {
           if (!Array.isArray(v) || v.length === 0)
             next[f.id] = `${f.name} is required`;
           break;
-        case "number":
-          if (v === undefined || v === null || String(v).trim() === "")
-            next[f.id] = `${f.name} is required`;
-          else if (!/^\d+(\.\d+)?$/.test(String(v)))
+        case "number": {
+          const sv = String(v ?? "").trim();
+          if (!sv) next[f.id] = `${f.name} is required`;
+          else if (!/^\d+(\.\d+)?$/.test(sv))
             next[f.id] = `${f.name} must be a number`;
           break;
+        }
         case "date":
           if (v === undefined || v === null || String(v).trim() === "")
             next[f.id] = `${f.name} is required`;
@@ -514,12 +554,7 @@ const Form = ({ navigation, route }) => {
       if (startDateField && endDateField) {
         const sv = values[startDateField.id];
         const ev = values[endDateField.id];
-        if (
-          sv &&
-          ev &&
-          /^\d{4}-\d{2}-\d{2}$/.test(String(sv)) &&
-          /^\d{4}-\d{2}-\d{2}$/.test(String(ev))
-        ) {
+        if (sv && ev && isYmd(sv) && isYmd(ev)) {
           const s = dayjs(sv, "YYYY-MM-DD");
           const e = dayjs(ev, "YYYY-MM-DD");
           if (e.isBefore(s, "day"))
@@ -549,7 +584,7 @@ const Form = ({ navigation, route }) => {
 
     // Save into draft
     patchBase({
-      category_id: subCategoryId,
+      category_id: resolvedCatId,
       post_type_id: postTypeId,
       title: title.trim(),
       description: description.trim(),
@@ -573,11 +608,7 @@ const Form = ({ navigation, route }) => {
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
       <View onLayout={(e) => setHeaderH(e.nativeEvent.layout.height)}>
-        <Header
-          title={toTitleCase(subCategorySlug || "Include some details")}
-          leftIcon={"back"}
-          titleLeft
-        />
+        <Header title={toTitleCase(resolvedSlug)} leftIcon={"back"} titleLeft />
       </View>
 
       {loading ? (
@@ -647,7 +678,11 @@ const Form = ({ navigation, route }) => {
 
                 if (f.type === "text" || f.type === "number") {
                   return (
-                    <View key={key} style={{ marginBottom: 20 }}>
+                    <View
+                      key={key}
+                      style={{ marginBottom: 20 }}
+                      onLayout={rememberY(key)}
+                    >
                       <Text
                         style={[
                           FONTS.font,
@@ -663,7 +698,11 @@ const Form = ({ navigation, route }) => {
                         placeholder={label}
                         placeholderTextColor={colors.text}
                         keyboardType={
-                          f.type === "number" ? "numeric" : "default"
+                          f.type === "number"
+                            ? Platform.OS === "ios"
+                              ? "decimal-pad"
+                              : "numeric"
+                            : "default"
                         }
                         inputMode={f.type === "number" ? "numeric" : "text"}
                         style={[
@@ -687,7 +726,11 @@ const Form = ({ navigation, route }) => {
 
                 if (f.type === "select") {
                   return (
-                    <View key={key} style={{ marginBottom: 10 }}>
+                    <View
+                      key={key}
+                      style={{ marginBottom: 10 }}
+                      onLayout={rememberY(key)}
+                    >
                       <Text
                         style={[
                           FONTS.font,
@@ -717,7 +760,11 @@ const Form = ({ navigation, route }) => {
 
                 if (f.type === "radio") {
                   return (
-                    <View key={key} style={{ marginBottom: 16 }}>
+                    <View
+                      key={key}
+                      style={{ marginBottom: 16 }}
+                      onLayout={rememberY(key)}
+                    >
                       <Text
                         style={[
                           FONTS.font,
@@ -747,7 +794,11 @@ const Form = ({ navigation, route }) => {
                     ? values[key]
                     : [];
                   return (
-                    <View key={key} style={{ marginBottom: 16 }}>
+                    <View
+                      key={key}
+                      style={{ marginBottom: 16 }}
+                      onLayout={rememberY(key)}
+                    >
                       <Text
                         style={[
                           FONTS.font,
@@ -759,11 +810,14 @@ const Form = ({ navigation, route }) => {
                       </Text>
                       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                         {options.map((opt) => {
-                          const checked = selected.includes(opt.value);
+                          const optLabel =
+                            opt.value ?? opt.name ?? String(opt.id);
+                          const optVal = opt.value ?? opt.name ?? "";
+                          const checked = selected.includes(optVal);
                           return (
                             <Pressable
                               key={String(opt.id)}
-                              onPress={() => toggleCheckbox(key, opt.value)}
+                              onPress={() => toggleCheckbox(key, optVal)}
                               accessibilityRole="checkbox"
                               accessibilityState={{ checked }}
                               style={{
@@ -788,7 +842,7 @@ const Form = ({ navigation, route }) => {
                                   fontWeight: checked ? "600" : "400",
                                 }}
                               >
-                                {opt.value}
+                                {optLabel}
                               </Text>
                             </Pressable>
                           );
@@ -807,12 +861,14 @@ const Form = ({ navigation, route }) => {
                   const isStart = startDateField?.id === key;
                   const isEnd = endDateField?.id === key;
 
-                  const minDate = isEnd
-                    ? toDate(values[startDateField?.id])
-                    : undefined;
-                  const maxDate = isStart
-                    ? toDate(values[endDateField?.id])
-                    : undefined;
+                  const minDate =
+                    isEnd && isYmd(values[startDateField?.id])
+                      ? toDate(values[startDateField.id])
+                      : undefined;
+                  const maxDate =
+                    isStart && isYmd(values[endDateField?.id])
+                      ? toDate(values[endDateField.id])
+                      : undefined;
 
                   return (
                     <DateInput
@@ -825,13 +881,18 @@ const Form = ({ navigation, route }) => {
                       errorText={errors[key]}
                       minDate={minDate}
                       maxDate={maxDate}
+                      onLayout={rememberY(key)}
                     />
                   );
                 }
 
                 // fallback as text
                 return (
-                  <View key={key} style={{ marginBottom: 20 }}>
+                  <View
+                    key={key}
+                    style={{ marginBottom: 20 }}
+                    onLayout={rememberY(key)}
+                  >
                     <Text
                       style={[
                         FONTS.font,

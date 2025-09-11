@@ -19,6 +19,7 @@ import { useListingDraft } from "../../../context/ListingDraftContext";
 import { AuthContext } from "../../../context/AuthProvider";
 
 // 👇 helper to clear AsyncStorage cache set in Uploadphoto
+
 import { clearPendingPhotosCache } from "./Uploadphoto";
 
 const API_BASE_URL = "https://qot.ug/api";
@@ -371,7 +372,7 @@ const Review = ({ navigation }) => {
 
           {/* FLOATING DETAILS CARD */}
           <View
-            style={{ position: "absolute", left: 20, right: 20, bottom: -36 }}
+            style={{ position: "absolute", left: 20, right: 20, bottom: -56 }}
           >
             <View
               style={{
