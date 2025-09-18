@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useTheme, useNavigation } from "@react-navigation/native";
 import { ScrollView } from "react-native-gesture-handler";
@@ -23,12 +24,16 @@ const API_BASE = "https://qot.ug/api";
 const APP_API_TOKEN = "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=";
 const REFRESH_INTERVAL_MS = 6000;
 
-// Flip to true only while debugging locally.
-// const DEBUG = true;
-
 /* ---------------------------------------------
    Helpers (no UI changes)
 --------------------------------------------- */
+const normalizePayload = (json) => json?.result ?? json?.data ?? json ?? null;
+
+const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
+
+const firstNonEmpty = (...vals) =>
+  vals.find((v) => typeof v === "string" && v?.trim().length) || "";
+
 const relativeShort = (dateLike) => {
   try {
     const d = new Date(dateLike);
@@ -51,105 +56,83 @@ const relativeShort = (dateLike) => {
   }
 };
 
-const firstNonEmpty = (...vals) =>
-  vals.find((v) => typeof v === "string" && v.trim().length) || "";
-
-const normalizePayload = (json) => json?.result ?? json?.data ?? json ?? null;
-
 const normUser = (u) =>
   u
     ? {
         id: u.id ?? u.user_id ?? null,
         name: u.name ?? u.username ?? "",
         username: u.username ?? "",
-        email: u.email ?? "",
-        phone: u.phone ?? "",
         photo_url: u.photo_url ?? u.photo ?? null,
       }
     : null;
 
 /**
- * Decide the "other user id" using latest_message and p_recipient.
- * - If I sent the last message → other = p_recipient.user_id
- * - Else                  → other = latest_message.user_id (the sender)
- * Fallbacks handle unknown "me".
+ * Rule:
+ * If latest_message.p_recipient.user_id === myId → otherId = p_creator.id
+ * Else → otherId = latest_message.p_recipient.user_id
  */
-const otherIdFromLatest = (threadDetail, myId) => {
-  const lm = threadDetail?.latest_message;
-  if (!lm) return null;
+const getOtherIdBySimpleRule = (t, myId) => {
+  const recipUserId = t?.latest_message?.p_recipient?.user_id ?? null;
+  const creatorId = t?.p_creator?.id ?? null;
 
-  const senderId = lm.user_id ?? null;
-  const recipId = lm.p_recipient?.user_id ?? null;
-
-  // If I know who I am:
-  if (myId != null) {
-    if (senderId != null && String(senderId) === String(myId))
-      return recipId ?? null;
-    if (recipId != null && String(recipId) === String(myId))
-      return senderId ?? null;
-  }
-
-  // If I don't know me, prefer "the other" as the id different from creator (common case)
-  const creatorId = threadDetail?.p_creator?.id ?? null;
-  if (
-    senderId != null &&
-    creatorId != null &&
-    String(senderId) !== String(creatorId)
-  )
-    return senderId;
-  if (
-    recipId != null &&
-    creatorId != null &&
-    String(recipId) !== String(creatorId)
-  )
-    return recipId;
-
-  // Last resort
-  return senderId ?? recipId ?? null;
+  if (recipUserId != null && idsEqual(recipUserId, myId))
+    return creatorId ?? null;
+  if (recipUserId != null) return recipUserId;
+  if (creatorId != null && !idsEqual(creatorId, myId)) return creatorId;
+  return null;
 };
 
-/** Find the full other user object within the thread detail (creator/participants/user). */
-const findOtherUserInThread = (threadDetail, otherId) => {
+const findOtherUserLocal = (t, otherId) => {
   if (!otherId) return null;
+  if (idsEqual(t?.p_creator?.id, otherId)) return normUser(t.p_creator);
 
-  if (
-    threadDetail?.p_creator?.id != null &&
-    String(threadDetail.p_creator.id) === String(otherId)
-  ) {
-    return normUser(threadDetail.p_creator);
-  }
-
-  if (Array.isArray(threadDetail?.participants)) {
-    // some APIs attach participant.user; others have flattened user fields
-    const hit = threadDetail.participants.find(
+  if (Array.isArray(t?.participants)) {
+    const hit = t.participants.find(
       (p) =>
-        String(p?.id) === String(otherId) ||
-        String(p?.user_id) === String(otherId) ||
-        (p?.user && String(p.user?.id) === String(otherId))
+        idsEqual(p?.user?.id, otherId) ||
+        idsEqual(p?.user_id, otherId) ||
+        idsEqual(p?.id, otherId)
     );
     if (hit?.user) return normUser(hit.user);
     if (hit) return normUser(hit);
   }
-
-  if (
-    threadDetail?.user?.id != null &&
-    String(threadDetail.user.id) === String(otherId)
-  ) {
-    return normUser(threadDetail.user);
-  }
-
   return null;
 };
 
-const extractListingThumb = (t) => {
-  const p = t?.post || {};
-  const picFromArray =
-    Array.isArray(p?.pictures) && p.pictures[0]?.url ? p.pictures[0].url : null;
-  return picFromArray || p?.picture || p?.picture_url || p?.image || null;
+const fetchUserById = async (id, token) => {
+  if (!id) return null;
+  const urls = [`${API_BASE}/users/${id}`, `${API_BASE}/user/${id}`];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+          Accept: "application/json",
+          "Content-Language": "en",
+          "X-AppApiToken": APP_API_TOKEN,
+          "X-AppType": "docs",
+        },
+      });
+      if (!res.ok) continue;
+      const j = await res.json();
+      const payload = normalizePayload(j);
+      const u = normUser(payload);
+      if (u?.id) return u;
+    } catch {}
+  }
+  return null;
 };
 
-const extractUnread = (t) =>
-  t?.unread_messages_count ?? t?.unread_count ?? (t?.p_is_unread ? 1 : 0);
+/** Unread helpers */
+const extractUnreadField = (t) => {
+  const n = t?.unread_messages_count ?? t?.unread_count;
+  if (typeof n === "number") return n;
+  return t?.p_is_unread ? 1 : 0;
+};
+const safeTs = (iso) => {
+  const t = iso ? new Date(iso).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
 
 /* ---------------------------------------------
    YOUR EXACT UI (unchanged)
@@ -353,15 +336,23 @@ const ActiveChat = ({ data }) => {
 };
 
 /* ---------------------------------------------
-   Screen (no dummy rows, only API data)
+   Screen (cache + live fetch + spinner + pull-to-refresh)
 --------------------------------------------- */
 const Chat = ({ navigation }) => {
   const theme = useTheme();
   const { colors } = theme;
-  const { userToken, user: ctxUser } = useContext(AuthContext) || {};
 
-  const [chatData, setChatData] = useState([]); // starts empty
-  const [liveUsers, setLiveUsers] = useState([]); // starts empty
+  const { userToken, userData } = useContext(AuthContext) || {};
+  const myId = userData?.id ?? null;
+
+  const [chatData, setChatData] = useState([]);
+  const [liveUsers, setLiveUsers] = useState([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Per-user cache keys
+  const THREADS_CACHE_KEY = `chat_threads_cache_v1_${myId ?? "anon"}`;
+  const LIVEUSERS_CACHE_KEY = `chat_live_users_cache_v1_${myId ?? "anon"}`;
 
   const fetchToken = useCallback(async () => {
     if (userToken) return userToken;
@@ -380,206 +371,243 @@ const Chat = ({ navigation }) => {
     "X-AppType": "docs",
   });
 
-  // Try to get my user id for perfect disambiguation.
-  const fetchMe = useCallback(
-    async (token) => {
-      if (ctxUser && (ctxUser.id || ctxUser.email || ctxUser.phone))
-        return normUser(ctxUser);
+  // precise unread (when API doesn't provide a number)
+  const fetchUnreadCount = useCallback(
+    async (threadId, myIdLocal, token, myLastRead) => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/threads/${threadId}/messages?sort=created_at&perPage=100`,
+          { headers: authHeaders(token) }
+        );
+        if (!res.ok) return 0;
+        const j = await res.json();
+        const payload = normalizePayload(j);
+        const msgs = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+          ? payload
+          : [];
 
-      const storageKeys = ["user", "authUser", "me"];
-      for (const k of storageKeys) {
-        const raw = await AsyncStorage.getItem(k);
-        if (raw) {
-          try {
-            const obj = JSON.parse(raw);
-            if (obj && (obj.id || obj.email || obj.phone)) return normUser(obj);
-          } catch {}
-        }
-      }
+        const lastReadTs = safeTs(myLastRead);
+        const unread = msgs.filter((m) => {
+          const ts = safeTs(m?.created_at);
+          if (!ts) return false;
+          if (lastReadTs != null && ts <= lastReadTs) return false;
+          return String(m?.user_id ?? "") !== String(myIdLocal ?? "");
+        }).length;
 
-      const endpoints = [
-        `${API_BASE}/me`,
-        `${API_BASE}/auth/me`,
-        `${API_BASE}/user`,
-        `${API_BASE}/users/me`,
-        `${API_BASE}/profile`,
-      ];
-      for (const url of endpoints) {
-        try {
-          const res = await fetch(url, { headers: authHeaders(token) });
-          if (!res.ok) continue;
-          const json = await res.json();
-          const payload = normalizePayload(json);
-          const normalized = normUser(payload);
-          if (
-            normalized &&
-            (normalized.id || normalized.email || normalized.phone)
-          )
-            return normalized;
-        } catch {}
+        return unread;
+      } catch {
+        return 0;
       }
-      return null;
     },
-    [ctxUser]
+    []
   );
 
-  // REPLACE your existing useEffect with this one
+  // ---------- Cache helpers ----------
+  const loadCache = useCallback(async () => {
+    try {
+      const [threadsStr, liveStr] = await AsyncStorage.multiGet([
+        THREADS_CACHE_KEY,
+        LIVEUSERS_CACHE_KEY,
+      ]).then((arr) => arr.map(([, v]) => v));
+
+      const cachedThreads = threadsStr ? JSON.parse(threadsStr) : [];
+      const cachedLive = liveStr ? JSON.parse(liveStr) : [];
+
+      if (Array.isArray(cachedThreads) && cachedThreads.length) {
+        setChatData(cachedThreads);
+      }
+      if (Array.isArray(cachedLive) && cachedLive.length) {
+        setLiveUsers(cachedLive);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsInitialLoading(false); // spinner only if no cache and network pending
+    }
+  }, [THREADS_CACHE_KEY, LIVEUSERS_CACHE_KEY]);
+
+  const saveCache = useCallback(
+    async (threads, live) => {
+      try {
+        await AsyncStorage.multiSet([
+          [THREADS_CACHE_KEY, JSON.stringify(threads || [])],
+          [LIVEUSERS_CACHE_KEY, JSON.stringify(live || [])],
+        ]);
+      } catch {
+        // ignore
+      }
+    },
+    [THREADS_CACHE_KEY, LIVEUSERS_CACHE_KEY]
+  );
+
+  // ---------- Fetch & map ----------
+  const loadOnce = useCallback(async () => {
+    const token = await fetchToken();
+    if (!token) return;
+
+    // 1) Get threads list
+    const listRes = await fetch(`${API_BASE}/threads?perPage=50`, {
+      headers: authHeaders(token),
+    });
+    const listJson = await listRes.json();
+    const payload = normalizePayload(listJson);
+    const list = Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload)
+      ? payload
+      : [];
+
+    if (!list.length) {
+      setChatData([]);
+      setLiveUsers([]);
+      await saveCache([], []);
+      return;
+    }
+
+    // 2) Build items using the rule + accurate unread count if needed
+    const items = await Promise.all(
+      list.map(async (t) => {
+        const otherId = getOtherIdBySimpleRule(t, myId);
+
+        let other = findOtherUserLocal(t, otherId);
+        if (!other && otherId) {
+          const token = await fetchToken();
+          other = await fetchUserById(otherId, token);
+        }
+
+        const title = firstNonEmpty(
+          other?.name,
+          other?.username,
+          otherId != null ? `User #${otherId}` : "User"
+        );
+
+        const image = IMAGES.car1; // big
+        const image2 = other?.photo_url
+          ? { uri: other.photo_url }
+          : IMAGES.Small1; // small overlay
+
+        const last = t?.latest_message;
+        const text = last?.body || "";
+        const time = last?.created_at ? relativeShort(last.created_at) : "";
+        const model = firstNonEmpty(t?.subject, " ");
+
+        let unread = extractUnreadField(t);
+        if (unread <= 1) {
+          let myLastRead = null;
+          const recip = t?.latest_message?.p_recipient;
+          if (
+            recip?.user_id != null &&
+            String(recip.user_id) === String(myId)
+          ) {
+            myLastRead = recip.last_read ?? null;
+          }
+          if (!myLastRead) {
+            try {
+              const res = await fetch(
+                `${API_BASE}/threads/${t.id}?embed=participants`,
+                {
+                  headers: authHeaders(token),
+                }
+              );
+              if (res.ok) {
+                const j = await res.json();
+                const det = normalizePayload(j);
+                const parts = Array.isArray(det?.participants)
+                  ? det.participants
+                  : [];
+                const me = parts.find(
+                  (p) =>
+                    String(p?.user_id ?? p?.user?.id ?? p?.id) ===
+                    String(myId ?? "")
+                );
+                if (me?.last_read) myLastRead = me.last_read;
+              }
+            } catch {}
+          }
+          const computed = await fetchUnreadCount(
+            t.id,
+            myId,
+            token,
+            myLastRead
+          );
+          if (computed > 0) unread = computed;
+        }
+        const chatcount =
+          unread > 99 ? "99+" : unread > 0 ? String(unread) : "";
+
+        return {
+          id: String(t.id),
+          title,
+          image,
+          image2,
+          model,
+          text,
+          time,
+          chatcount,
+        };
+      })
+    );
+
+    setChatData(items);
+
+    // 3) ActiveChat = unique other users from items
+    const seen = new Set();
+    const live = [];
+    items.forEach((m, i) => {
+      const key = (m.title || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      live.push({
+        id: String(i + 1),
+        title: m.title,
+        image: m.image2 || IMAGES.Small1,
+      });
+    });
+    setLiveUsers(live);
+
+    // 4) Save to cache for instant next load
+    await saveCache(items, live);
+  }, [fetchToken, myId, saveCache, fetchUnreadCount]);
+
+  // ---------- Effects ----------
   useEffect(() => {
     let isMounted = true;
     let intervalId = null;
 
-    const authHeaders = (token) => ({
-      Authorization: token ? `Bearer ${token}` : "",
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "Content-Language": "en",
-      "X-AppApiToken": APP_API_TOKEN,
-      "X-AppType": "docs",
-    });
+    // load cache immediately
+    loadCache();
 
-    const normalizePayload = (json) =>
-      json?.result ?? json?.data ?? json ?? null;
-
-    const firstNonEmpty = (...vals) =>
-      vals.find((v) => typeof v === "string" && v.trim().length) || "";
-
-    const loadOnce = async () => {
+    // first network fetch
+    (async () => {
       try {
-        const token = await fetchToken();
-        if (!token || !isMounted) return;
-
-        // who am I (for disambiguating latest_message sender/recipient)
-        const me = await fetchMe(token);
-        if (!isMounted) return;
-
-        // 1) list threads
-        const listRes = await fetch(`${API_BASE}/threads?perPage=50`, {
-          headers: authHeaders(token),
-        });
-        const listJson = await listRes.json();
-        const listPayload = normalizePayload(listJson);
-        const list = Array.isArray(listPayload?.data)
-          ? listPayload.data
-          : Array.isArray(listPayload)
-          ? listPayload
-          : [];
-        if (!isMounted) return;
-
-        if (!list.length) {
-          if (isMounted) {
-            setChatData([]);
-            setLiveUsers([]);
-          }
-          return;
-        }
-
-        // 2) thread details (need latest_message.p_recipient, p_creator, participants, post)
-        const detailPairs = await Promise.all(
-          list.map(async (t) => {
-            try {
-              const res = await fetch(
-                `${API_BASE}/threads/${t.id}?embed=participants,post`,
-                { headers: authHeaders(token) }
-              );
-              if (!res.ok) return [t.id, null];
-              const j = await res.json();
-              return [t.id, normalizePayload(j)];
-            } catch {
-              return [t.id, null];
-            }
-          })
-        );
-        if (!isMounted) return;
-
-        const byId = {};
-        detailPairs.forEach(([id, d]) => {
-          if (d) byId[id] = d;
-        });
-
-        // helpers we already defined earlier in your file:
-        // relativeShort, extractListingThumb, extractUnread,
-        // otherIdFromLatest(threadDetail, myId),
-        // findOtherUserInThread(threadDetail, otherId)
-
-        // 3) map into your existing UI props
-        const mapped = list.map((lite, idx) => {
-          const t = byId[lite.id] ? { ...lite, ...byId[lite.id] } : lite;
-
-          const myId = me?.id ?? null;
-          const otherId = otherIdFromLatest(t, myId);
-          const other = findOtherUserInThread(t, otherId);
-
-          const title = firstNonEmpty(
-            other?.name,
-            other?.username,
-            otherId != null ? `User #${otherId}` : "User"
-          );
-
-          const listingUri = extractListingThumb(t);
-          const image = listingUri ? { uri: listingUri } : IMAGES.car1;
-
-          const image2 = other?.photo_url
-            ? { uri: other.photo_url }
-            : IMAGES.Small1;
-
-          const model = firstNonEmpty(
-            t?.post?.category?.name,
-            t?.post?.title,
-            " "
-          );
-
-          const last = t?.latest_message;
-          const text = last?.body || "";
-          const time = last?.created_at ? relativeShort(last.created_at) : "";
-
-          const chatcount = extractUnread(t) ? "1" : "";
-
-          return {
-            id: String(t.id),
-            title,
-            image,
-            image2,
-            model,
-            text,
-            time,
-            chatcount,
-          };
-        });
-
-        if (!isMounted) return;
-        setChatData(mapped);
-
-        // 4) ActiveChat (unique other users by name)
-        const seen = new Set();
-        const live = [];
-        mapped.forEach((m, i) => {
-          const key = (m.title || "").trim().toLowerCase();
-          if (!key || seen.has(key)) return;
-          seen.add(key);
-          live.push({
-            id: String(i + 1),
-            title: m.title,
-            image: m.image2 || IMAGES.Small1,
-          });
-        });
-        if (isMounted) setLiveUsers(live);
-      } catch (e) {
-        if (isMounted) {
-          setChatData([]);
-          setLiveUsers([]);
-        }
+        await loadOnce();
+      } finally {
+        if (isMounted) setIsInitialLoading(false);
       }
-    };
+    })();
 
-    // initial load + interval
-    loadOnce();
-    intervalId = setInterval(loadOnce, REFRESH_INTERVAL_MS);
+    // polling for new data
+    intervalId = setInterval(() => {
+      loadOnce().catch(() => {});
+    }, REFRESH_INTERVAL_MS);
 
     return () => {
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [fetchToken, fetchMe]);
+  }, [loadCache, loadOnce]);
+
+  // Pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadOnce();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadOnce]);
 
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
@@ -623,7 +651,7 @@ const Chat = ({ navigation }) => {
         contentContainerStyle={[
           { paddingBottom: 100 },
           Platform.OS === "web" && GlobalStyleSheet.container,
-          { padding: 0 },
+          { padding: 0, flexGrow: 1 },
         ]}
         showsVerticalScrollIndicator={false}
         data={chatData}
@@ -643,6 +671,32 @@ const Chat = ({ navigation }) => {
         )}
         ListHeaderComponent={() => <ActiveChat data={liveUsers} />}
         keyExtractor={(item) => String(item.id)}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        ListEmptyComponent={
+          isInitialLoading ? (
+            <View
+              style={{
+                flex: 1,
+                paddingTop: 40,
+                alignItems: "center",
+                justifyContent: "flex-start",
+              }}
+            >
+              <ActivityIndicator size="small" color={colors.title} />
+              <Text
+                style={{
+                  ...FONTS.fontSm,
+                  color: colors.title,
+                  opacity: 0.6,
+                  marginTop: 8,
+                }}
+              >
+                Loading messages…
+              </Text>
+            </View>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
