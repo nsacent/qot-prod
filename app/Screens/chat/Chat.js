@@ -1,4 +1,11 @@
-import React, { useEffect, useState, useContext, useCallback } from "react";
+import React, {
+  useEffect,
+  useState,
+  useContext,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -8,6 +15,7 @@ import {
   FlatList,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useTheme, useNavigation } from "@react-navigation/native";
 import { ScrollView } from "react-native-gesture-handler";
@@ -21,16 +29,15 @@ import { AuthContext } from "../../context/AuthProvider";
    Config
 --------------------------------------------- */
 const API_BASE = "https://qot.ug/api";
+const ORIGIN = "https://qot.ug";
 const APP_API_TOKEN = "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=";
 const REFRESH_INTERVAL_MS = 6000;
 
 /* ---------------------------------------------
-   Helpers (no UI changes)
+   Helpers
 --------------------------------------------- */
 const normalizePayload = (json) => json?.result ?? json?.data ?? json ?? null;
-
 const idsEqual = (a, b) => a != null && b != null && String(a) === String(b);
-
 const firstNonEmpty = (...vals) =>
   vals.find((v) => typeof v === "string" && v?.trim().length) || "";
 
@@ -56,6 +63,12 @@ const relativeShort = (dateLike) => {
   }
 };
 
+const ensureAbsoluteUrl = (u) => {
+  if (!u || typeof u !== "string") return null;
+  if (u.startsWith("http://") || u.startsWith("https://")) return u;
+  return `${ORIGIN}/${u.replace(/^\/+/, "")}`;
+};
+
 const normUser = (u) =>
   u
     ? {
@@ -66,15 +79,10 @@ const normUser = (u) =>
       }
     : null;
 
-/**
- * Rule:
- * If latest_message.p_recipient.user_id === myId → otherId = p_creator.id
- * Else → otherId = latest_message.p_recipient.user_id
- */
+/** Other-party rule */
 const getOtherIdBySimpleRule = (t, myId) => {
   const recipUserId = t?.latest_message?.p_recipient?.user_id ?? null;
   const creatorId = t?.p_creator?.id ?? null;
-
   if (recipUserId != null && idsEqual(recipUserId, myId))
     return creatorId ?? null;
   if (recipUserId != null) return recipUserId;
@@ -85,7 +93,6 @@ const getOtherIdBySimpleRule = (t, myId) => {
 const findOtherUserLocal = (t, otherId) => {
   if (!otherId) return null;
   if (idsEqual(t?.p_creator?.id, otherId)) return normUser(t.p_creator);
-
   if (Array.isArray(t?.participants)) {
     const hit = t.participants.find(
       (p) =>
@@ -135,7 +142,103 @@ const safeTs = (iso) => {
 };
 
 /* ---------------------------------------------
-   YOUR EXACT UI (unchanged)
+   POST IMAGE HELPERS (avatar fallback & upgrade via /posts/{id})
+--------------------------------------------- */
+// meta: { uri: string | null, source: 'post' | 'avatar' | 'none' }
+const pickPostImageFromPost = (post) => {
+  if (!post) return { uri: null, source: "none" };
+
+  const pickFromUrlObj = (urlObj) => {
+    if (!urlObj) return null;
+    const nonWebp = [urlObj.small, urlObj.medium, urlObj.large, urlObj.full]
+      .map(ensureAbsoluteUrl)
+      .filter(Boolean);
+    const webpObj = urlObj.webp || {};
+    const webp = [webpObj.small, webpObj.medium, webpObj.large, webpObj.full]
+      .map(ensureAbsoluteUrl)
+      .filter(Boolean);
+    return nonWebp[0] || webp[0] || null;
+  };
+
+  const fromTopLevel = pickFromUrlObj(post.picture?.url);
+  if (fromTopLevel) return { uri: fromTopLevel, source: "post" };
+
+  for (const key of ["pictures", "images", "photos"]) {
+    const arr = post?.[key];
+    if (Array.isArray(arr) && arr.length) {
+      const urlObj = arr[0]?.url || arr[0]?.webp;
+      const fromArrUrl = pickFromUrlObj(urlObj);
+      if (fromArrUrl) return { uri: fromArrUrl, source: "post" };
+
+      const candidate =
+        arr[0]?.filename_url ||
+        arr[0]?.file_url ||
+        arr[0]?.picture_url ||
+        arr[0]?.thumbnail ||
+        arr[0]?.small ||
+        arr[0]?.medium ||
+        arr[0]?.large ||
+        arr[0]?.url;
+      const abs = ensureAbsoluteUrl(candidate);
+      if (abs) return { uri: abs, source: "post" };
+    }
+  }
+
+  if (post.user_photo_url) {
+    const abs = ensureAbsoluteUrl(post.user_photo_url);
+    if (abs) return { uri: abs, source: "avatar" };
+  }
+
+  return { uri: null, source: "none" };
+};
+
+const getPostImageById = async (postId, token, authHeaders) => {
+  try {
+    if (!postId) return { uri: null, source: "none" };
+    const res = await fetch(`${API_BASE}/posts/${postId}`, {
+      headers: authHeaders(token),
+    });
+    if (!res.ok) return { uri: null, source: "none" };
+    const j = await res.json();
+    const post = normalizePayload(j);
+    return pickPostImageFromPost(post);
+  } catch {
+    return { uri: null, source: "none" };
+  }
+};
+
+/* ---------------------------------------------
+   SEARCH helpers
+--------------------------------------------- */
+const ensureSearchFields = (t) => {
+  const name = (t.__search_name ?? t.title ?? "").toString().toLowerCase();
+  const subj = (t.__search_subject ?? t.model ?? t.subject ?? "")
+    .toString()
+    .toLowerCase();
+  const text = (t.__search_text ?? t.text ?? "").toString().toLowerCase();
+  return {
+    ...t,
+    __search_name: name,
+    __search_subject: subj,
+    __search_text: text,
+  };
+};
+
+const filterThreads = (items, q) => {
+  const ql = (q || "").trim().toLowerCase();
+  if (!ql) return items || [];
+  return (items || []).filter((raw) => {
+    const t = ensureSearchFields(raw);
+    return (
+      t.__search_name.includes(ql) ||
+      t.__search_subject.includes(ql) ||
+      t.__search_text.includes(ql)
+    );
+  });
+};
+
+/* ---------------------------------------------
+   UI
 --------------------------------------------- */
 const Item = ({
   id,
@@ -160,7 +263,6 @@ const Item = ({
         paddingVertical: 10,
         paddingLeft: 10,
         marginBottom: 8,
-        borderRadius: 15,
         marginHorizontal: 10,
         borderColor: theme.colors.border,
         backgroundColor: theme.colors.card,
@@ -249,7 +351,6 @@ const Item = ({
                   color: "#fff",
                   width: 20,
                   height: 20,
-                  alignItems: "center",
                   textAlign: "center",
                 }}
               >
@@ -336,7 +437,7 @@ const ActiveChat = ({ data }) => {
 };
 
 /* ---------------------------------------------
-   Screen (cache + live fetch + spinner + pull-to-refresh)
+   Screen (cache + live fetch + spinner + pull-to-refresh + search)
 --------------------------------------------- */
 const Chat = ({ navigation }) => {
   const theme = useTheme();
@@ -345,14 +446,25 @@ const Chat = ({ navigation }) => {
   const { userToken, userData } = useContext(AuthContext) || {};
   const myId = userData?.id ?? null;
 
-  const [chatData, setChatData] = useState([]);
+  const [chatData, setChatData] = useState([]); // full
+  const [displayData, setDisplayData] = useState([]); // filtered for list
   const [liveUsers, setLiveUsers] = useState([]);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(true); // blocks view only if no data yet
+  const [isSyncing, setIsSyncing] = useState(false); // small header spinner for first sync
   const [refreshing, setRefreshing] = useState(false);
 
+  // Search
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const isSearchActive = useMemo(
+    () => searchQuery.trim().length > 0,
+    [searchQuery]
+  );
+  const baseDataRef = useRef([]); // last full dataset for stable filtering
+
   // Per-user cache keys
-  const THREADS_CACHE_KEY = `chat_threads_cache_v1_${myId ?? "anon"}`;
-  const LIVEUSERS_CACHE_KEY = `chat_live_users_cache_v1_${myId ?? "anon"}`;
+  const THREADS_CACHE_KEY = `chat_threads_cache_v16_${myId ?? "anon"}`;
+  const LIVEUSERS_CACHE_KEY = `chat_live_users_cache_v16_${myId ?? "anon"}`;
 
   const fetchToken = useCallback(async () => {
     if (userToken) return userToken;
@@ -371,7 +483,6 @@ const Chat = ({ navigation }) => {
     "X-AppType": "docs",
   });
 
-  // precise unread (when API doesn't provide a number)
   const fetchUnreadCount = useCallback(
     async (threadId, myIdLocal, token, myLastRead) => {
       try {
@@ -387,7 +498,6 @@ const Chat = ({ navigation }) => {
           : Array.isArray(payload)
           ? payload
           : [];
-
         const lastReadTs = safeTs(myLastRead);
         const unread = msgs.filter((m) => {
           const ts = safeTs(m?.created_at);
@@ -395,7 +505,6 @@ const Chat = ({ navigation }) => {
           if (lastReadTs != null && ts <= lastReadTs) return false;
           return String(m?.user_id ?? "") !== String(myIdLocal ?? "");
         }).length;
-
         return unread;
       } catch {
         return 0;
@@ -404,8 +513,9 @@ const Chat = ({ navigation }) => {
     []
   );
 
-  // ---------- Cache helpers ----------
+  // ---------- Cache ----------
   const loadCache = useCallback(async () => {
+    let hadCache = false;
     try {
       const [threadsStr, liveStr] = await AsyncStorage.multiGet([
         THREADS_CACHE_KEY,
@@ -416,17 +526,27 @@ const Chat = ({ navigation }) => {
       const cachedLive = liveStr ? JSON.parse(liveStr) : [];
 
       if (Array.isArray(cachedThreads) && cachedThreads.length) {
-        setChatData(cachedThreads);
+        const withSearchFields = cachedThreads.map(ensureSearchFields);
+        baseDataRef.current = withSearchFields;
+        setChatData(withSearchFields);
+        setDisplayData(
+          isSearchActive
+            ? filterThreads(withSearchFields, searchQuery)
+            : withSearchFields
+        );
+        hadCache = true;
       }
       if (Array.isArray(cachedLive) && cachedLive.length) {
         setLiveUsers(cachedLive);
+        hadCache = true;
       }
     } catch {
       // ignore
     } finally {
-      setIsInitialLoading(false); // spinner only if no cache and network pending
+      // Only dismiss the blocking spinner if we actually showed cached data.
+      if (hadCache) setIsInitialLoading(false);
     }
-  }, [THREADS_CACHE_KEY, LIVEUSERS_CACHE_KEY]);
+  }, [THREADS_CACHE_KEY, LIVEUSERS_CACHE_KEY, isSearchActive, searchQuery]);
 
   const saveCache = useCallback(
     async (threads, live) => {
@@ -435,166 +555,193 @@ const Chat = ({ navigation }) => {
           [THREADS_CACHE_KEY, JSON.stringify(threads || [])],
           [LIVEUSERS_CACHE_KEY, JSON.stringify(live || [])],
         ]);
-      } catch {
-        // ignore
-      }
+      } catch {}
     },
     [THREADS_CACHE_KEY, LIVEUSERS_CACHE_KEY]
   );
 
-  // ---------- Fetch & map ----------
-  const loadOnce = useCallback(async () => {
-    const token = await fetchToken();
-    if (!token) return;
+  // ---------- Build & Fetch ----------
+  const loadOnce = useCallback(
+    async (showHeaderSpinner = false) => {
+      const token = await fetchToken();
+      if (!token) {
+        setIsInitialLoading(false);
+        return;
+      }
+      if (showHeaderSpinner) setIsSyncing(true);
 
-    // 1) Get threads list
-    const listRes = await fetch(`${API_BASE}/threads?perPage=50`, {
-      headers: authHeaders(token),
-    });
-    const listJson = await listRes.json();
-    const payload = normalizePayload(listJson);
-    const list = Array.isArray(payload?.data)
-      ? payload.data
-      : Array.isArray(payload)
-      ? payload
-      : [];
+      try {
+        const listRes = await fetch(
+          `${API_BASE}/threads?perPage=50&embed=post`,
+          {
+            headers: authHeaders(token),
+          }
+        );
+        if (!listRes.ok) throw new Error("threads fetch failed");
 
-    if (!list.length) {
-      setChatData([]);
-      setLiveUsers([]);
-      await saveCache([], []);
-      return;
-    }
+        const listJson = await listRes.json();
+        const payload = normalizePayload(listJson);
+        const list = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload)
+          ? payload
+          : [];
 
-    // 2) Build items using the rule + accurate unread count if needed
-    const items = await Promise.all(
-      list.map(async (t) => {
-        const otherId = getOtherIdBySimpleRule(t, myId);
-
-        let other = findOtherUserLocal(t, otherId);
-        if (!other && otherId) {
-          const token = await fetchToken();
-          other = await fetchUserById(otherId, token);
+        if (!list.length) {
+          baseDataRef.current = [];
+          setChatData([]);
+          setDisplayData([]);
+          setLiveUsers([]);
+          await saveCache([], []);
+          setIsInitialLoading(false);
+          return;
         }
 
-        const title = firstNonEmpty(
-          other?.name,
-          other?.username,
-          otherId != null ? `User #${otherId}` : "User"
+        const items = await Promise.all(
+          list.map(async (t) => {
+            const otherId = getOtherIdBySimpleRule(t, myId);
+
+            let other = findOtherUserLocal(t, otherId);
+            if (!other && otherId) {
+              const tkn = await fetchToken();
+              other = await fetchUserById(otherId, tkn);
+            }
+
+            const title = firstNonEmpty(
+              other?.name,
+              other?.username,
+              otherId != null ? `User #${otherId}` : "User"
+            );
+
+            // Big image: embedded post -> upgrade via /posts/{id} if needed
+            let imgMeta = pickPostImageFromPost(t?.post);
+            const needsUpgrade =
+              !imgMeta?.uri ||
+              imgMeta.source !== "post" ||
+              (imgMeta.uri || "").includes("/storage/app/default/user.png");
+
+            if (needsUpgrade && t?.post_id) {
+              const upgraded = await getPostImageById(
+                t.post_id,
+                token,
+                authHeaders
+              );
+              if (upgraded?.uri && upgraded.source === "post") {
+                imgMeta = upgraded;
+              }
+            }
+            const image = imgMeta?.uri ? { uri: imgMeta.uri } : IMAGES.car1;
+
+            // Small overlay avatar
+            const image2 = other?.photo_url
+              ? { uri: ensureAbsoluteUrl(other.photo_url) }
+              : IMAGES.Small1;
+
+            const last = t?.latest_message;
+            const text = last?.body || "";
+            const time = last?.created_at ? relativeShort(last.created_at) : "";
+            const model = firstNonEmpty(t?.subject, " ");
+
+            let unread = extractUnreadField(t);
+            if (unread <= 1) {
+              let myLastRead = null;
+              const recip = t?.latest_message?.p_recipient;
+              if (
+                recip?.user_id != null &&
+                String(recip.user_id) === String(myId)
+              ) {
+                myLastRead = recip.last_read ?? null;
+              }
+              if (!myLastRead) {
+                try {
+                  const res = await fetch(
+                    `${API_BASE}/threads/${t.id}?embed=participants`,
+                    {
+                      headers: authHeaders(token),
+                    }
+                  );
+                  if (res.ok) {
+                    const j = await res.json();
+                    const det = normalizePayload(j);
+                    const parts = Array.isArray(det?.participants)
+                      ? det.participants
+                      : [];
+                    const me = parts.find(
+                      (p) =>
+                        String(p?.user_id ?? p?.user?.id ?? p?.id) ===
+                        String(myId ?? "")
+                    );
+                    if (me?.last_read) myLastRead = me.last_read;
+                  }
+                } catch {}
+              }
+              const computed = await fetchUnreadCount(
+                t.id,
+                myId,
+                token,
+                myLastRead
+              );
+              if (computed > 0) unread = computed;
+            }
+            const chatcount =
+              unread > 99 ? "99+" : unread > 0 ? String(unread) : "";
+
+            return ensureSearchFields({
+              id: String(t.id),
+              title,
+              image,
+              image2,
+              model,
+              text,
+              time,
+              chatcount,
+            });
+          })
         );
 
-        const image = IMAGES.car1; // big
-        const image2 = other?.photo_url
-          ? { uri: other.photo_url }
-          : IMAGES.Small1; // small overlay
+        baseDataRef.current = items;
+        setChatData(items);
+        setDisplayData(
+          isSearchActive ? filterThreads(items, searchQuery) : items
+        );
 
-        const last = t?.latest_message;
-        const text = last?.body || "";
-        const time = last?.created_at ? relativeShort(last.created_at) : "";
-        const model = firstNonEmpty(t?.subject, " ");
+        const seen = new Set();
+        const live = [];
+        items.forEach((m, i) => {
+          const key = (m.title || "").trim().toLowerCase();
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          live.push({
+            id: String(i + 1),
+            title: m.title,
+            image: m.image2 || IMAGES.Small1,
+          });
+        });
+        setLiveUsers(live);
 
-        let unread = extractUnreadField(t);
-        if (unread <= 1) {
-          let myLastRead = null;
-          const recip = t?.latest_message?.p_recipient;
-          if (
-            recip?.user_id != null &&
-            String(recip.user_id) === String(myId)
-          ) {
-            myLastRead = recip.last_read ?? null;
-          }
-          if (!myLastRead) {
-            try {
-              const res = await fetch(
-                `${API_BASE}/threads/${t.id}?embed=participants`,
-                {
-                  headers: authHeaders(token),
-                }
-              );
-              if (res.ok) {
-                const j = await res.json();
-                const det = normalizePayload(j);
-                const parts = Array.isArray(det?.participants)
-                  ? det.participants
-                  : [];
-                const me = parts.find(
-                  (p) =>
-                    String(p?.user_id ?? p?.user?.id ?? p?.id) ===
-                    String(myId ?? "")
-                );
-                if (me?.last_read) myLastRead = me.last_read;
-              }
-            } catch {}
-          }
-          const computed = await fetchUnreadCount(
-            t.id,
-            myId,
-            token,
-            myLastRead
-          );
-          if (computed > 0) unread = computed;
-        }
-        const chatcount =
-          unread > 99 ? "99+" : unread > 0 ? String(unread) : "";
+        await saveCache(items, live);
+        setIsInitialLoading(false);
+      } catch {
+        setIsInitialLoading(false);
+      } finally {
+        if (showHeaderSpinner) setIsSyncing(false);
+      }
+    },
+    [fetchToken, myId, saveCache, fetchUnreadCount, isSearchActive, searchQuery]
+  );
 
-        return {
-          id: String(t.id),
-          title,
-          image,
-          image2,
-          model,
-          text,
-          time,
-          chatcount,
-        };
-      })
-    );
-
-    setChatData(items);
-
-    // 3) ActiveChat = unique other users from items
-    const seen = new Set();
-    const live = [];
-    items.forEach((m, i) => {
-      const key = (m.title || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      live.push({
-        id: String(i + 1),
-        title: m.title,
-        image: m.image2 || IMAGES.Small1,
-      });
-    });
-    setLiveUsers(live);
-
-    // 4) Save to cache for instant next load
-    await saveCache(items, live);
-  }, [fetchToken, myId, saveCache, fetchUnreadCount]);
-
-  // ---------- Effects ----------
+  // Effects: load cache immediately, then run first sync WITH header spinner; poll silently afterwards.
   useEffect(() => {
-    let isMounted = true;
     let intervalId = null;
 
-    // load cache immediately
-    loadCache();
-
-    // first network fetch
-    (async () => {
-      try {
-        await loadOnce();
-      } finally {
-        if (isMounted) setIsInitialLoading(false);
-      }
-    })();
-
-    // polling for new data
-    intervalId = setInterval(() => {
-      loadOnce().catch(() => {});
-    }, REFRESH_INTERVAL_MS);
+    loadCache().finally(() => {
+      loadOnce(true); // show header spinner for first sync
+      intervalId = setInterval(() => {
+        loadOnce(false).catch(() => {}); // silent polling
+      }, REFRESH_INTERVAL_MS);
+    });
 
     return () => {
-      isMounted = false;
       if (intervalId) clearInterval(intervalId);
     };
   }, [loadCache, loadOnce]);
@@ -603,11 +750,25 @@ const Chat = ({ navigation }) => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadOnce();
+      await loadOnce(false); // RefreshControl already shows spinner
     } finally {
       setRefreshing(false);
     }
   }, [loadOnce]);
+
+  // Search handlers
+  const applySearch = useCallback((q) => {
+    setDisplayData(filterThreads(baseDataRef.current, q));
+  }, []);
+  const toggleSearch = useCallback(() => {
+    if (isSearchVisible) {
+      setSearchQuery("");
+      setDisplayData(baseDataRef.current);
+    }
+    setIsSearchVisible((v) => !v);
+  }, [isSearchVisible]);
+
+  const spinnerColor = colors.primary ?? COLORS.primary ?? colors.title;
 
   return (
     <SafeAreaView style={{ backgroundColor: colors.card, flex: 1 }}>
@@ -633,7 +794,17 @@ const Chat = ({ navigation }) => {
           >
             Chats
           </Text>
-          <TouchableOpacity>
+
+          {/* Small header spinner that matches your theme color */}
+          {isSyncing && (
+            <ActivityIndicator
+              size="small"
+              color={spinnerColor}
+              style={{ marginRight: 12 }}
+            />
+          )}
+
+          <TouchableOpacity onPress={toggleSearch}>
             <Image
               style={{
                 width: 20,
@@ -645,16 +816,91 @@ const Chat = ({ navigation }) => {
             />
           </TouchableOpacity>
         </View>
+
+        {isSearchVisible && (
+          <View
+            style={{
+              marginHorizontal: -15,
+              paddingHorizontal: 15,
+              paddingTop: 8,
+              paddingBottom: 10,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+              backgroundColor: colors.card,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: SIZES.radius,
+                paddingHorizontal: 10,
+                height: 38,
+              }}
+            >
+              <Image
+                source={IMAGES.search}
+                style={{
+                  width: 16,
+                  height: 16,
+                  tintColor: colors.text,
+                  marginRight: 8,
+                  resizeMode: "contain",
+                }}
+              />
+              <TextInput
+                placeholder="Search chats"
+                placeholderTextColor={colors.text + "99"}
+                value={searchQuery}
+                onChangeText={(t) => {
+                  const next = (t || "").toString();
+                  setSearchQuery(next);
+                  applySearch(next);
+                }}
+                autoCorrect={false}
+                autoCapitalize="none"
+                style={{
+                  flex: 1,
+                  ...FONTS.fontSm,
+                  color: colors.title,
+                  paddingVertical: 0,
+                }}
+                returnKeyType="search"
+              />
+              {searchQuery ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery("");
+                    setDisplayData(baseDataRef.current);
+                  }}
+                >
+                  <Text
+                    style={{
+                      ...FONTS.fontSm,
+                      color: colors.title,
+                      opacity: 0.6,
+                    }}
+                  >
+                    Clear
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+        )}
       </View>
 
       <FlatList
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           { paddingBottom: 100 },
           Platform.OS === "web" && GlobalStyleSheet.container,
           { padding: 0, flexGrow: 1 },
         ]}
         showsVerticalScrollIndicator={false}
-        data={chatData}
+        data={displayData}
         renderItem={({ item }) => (
           <Item
             id={item.id}
@@ -683,7 +929,7 @@ const Chat = ({ navigation }) => {
                 justifyContent: "flex-start",
               }}
             >
-              <ActivityIndicator size="small" color={colors.title} />
+              <ActivityIndicator size="small" color={spinnerColor} />
               <Text
                 style={{
                   ...FONTS.fontSm,
