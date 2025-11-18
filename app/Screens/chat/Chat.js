@@ -470,13 +470,14 @@ const Chat = ({ navigation }) => {
   }, [userToken]);
 
   const authHeaders = (token) => ({
-    Authorization: token ? `Bearer ${token}` : "",
     Accept: "application/json",
     "Content-Type": "application/json",
     "Content-Language": "en",
     "X-AppApiToken": APP_API_TOKEN,
-    "X-AppType": "docs",
+    "X-AppType": "mobile",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   });
+
 
   /** const fetchUnreadCount = useCallback(
      async (threadId, myIdLocal, token, myLastRead) => {
@@ -514,9 +515,13 @@ const Chat = ({ navigation }) => {
 
       try {
         // Use ApiService.get or a generic GET method
+        const token = await fetchToken();
+
         const res = await ApiService.getThreadMessages(threadId, {
           params: { sort: "created_at", perPage: 100 },
+          headers: authHeaders(token),
         });
+
 
         const payload = normalizePayload(res.data);
 

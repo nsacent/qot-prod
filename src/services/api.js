@@ -35,10 +35,22 @@ const replaceParams = (path, params) => {
 api.interceptors.request.use(
   async (config) => {
     // Add auth token if exists
-    const token = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    const rawToken = await AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+
+    // FIX: avoid double "Bearer"
+    if (rawToken) {
+      const fixedToken =
+        rawToken.startsWith("Bearer") ? rawToken : `Bearer ${rawToken}`;
+
+      config.headers.Authorization = fixedToken;
     }
+
+
+    // REQUIRED HEADERS FOR LARACLASSIFIER
+    config.headers["Accept"] = "application/json";
+    config.headers["Content-Language"] = "en";
+    config.headers["X-AppApiToken"] = "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=";
+    config.headers["X-AppType"] = "mobile";
 
     // Log request in development
     if (__DEV__) {
@@ -52,10 +64,9 @@ api.interceptors.request.use(
 
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
+
 
 // Response Interceptor
 api.interceptors.response.use(
@@ -187,7 +198,7 @@ export const ApiService = {
 
   //Thread messages
   getThreadMessages: (threadId, config = {}) =>
-    api.get(`/threads/${threadId}/messages`, config),
+    api.get(`threads/${threadId}/messages`, config),
 
 };
 

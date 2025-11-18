@@ -4,7 +4,7 @@
  */
 
 // Base API Configuration
-export const API_BASE_URL = "https://qot.ug/api";
+export const API_BASE_URL = "https://qot.ug/api/";
 
 // Request Timeout (ms)
 export const API_TIMEOUT = 30000;
@@ -16,6 +16,8 @@ export const DEFAULT_HEADERS = {
   "Content-Language": "en", // Default app language
   "X-AppApiToken": "RFI3M0xVRmZoSDVIeWhUVGQzdXZxTzI4U3llZ0QxQVY=", // Static API token
   "X-Client-Version": "1.0.0", // App version
+  "X-AppType": "mobile",   // ← FIXED
+
 };
 
 // API Endpoints
@@ -33,7 +35,7 @@ export const API_ENDPOINTS = {
     PROFILE: "/users/profile",
     UPDATE: "/users/update",
     PHOTO: "/users/:id/photo",
-    BY_ID: "/users/:id",
+    BY_ID: "users/:id",
     STATS: "/users/:id/stats",
   },
 
